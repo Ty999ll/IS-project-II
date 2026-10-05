@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Scan results{% endblock %}
+{% block content %}
+<h3>Results for scan #{{ target.scan_id }}</h3>
+<p><strong>URL:</strong> {{ target.url }} &nbsp; <strong>Status:</strong> {{ target.scan_status }}</p>
+
+<table class="table">
+  <thead><tr><th>Parameter</th><th>Method</th><th>Classification</th><th>Payload</th></tr></thead>
+  <tbody>
+    {% for f in findings %}
+    <tr class="{{ 'table-danger' if f.finding_classification == 'CONFIRMED_VULNERABLE' else ('table-warning' if f.finding_classification == 'SCAN_ERROR' else 'table-success') }}">
+      <td>{{ f.parameter_name }}</td>
+      <td>{{ f.detection_method }}</td>
+      <td>{{ f.finding_classification }}</td>
+      <td><code>{{ f.payload_used or '—' }}</code></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<a class="btn btn-secondary" href="{{ url_for('scan.dashboard') }}">Back to dashboard</a>
+<a class="btn btn-primary" href="{{ url_for('report.view_report', scan_id=target.scan_id) }}">View report</a>
+{% endblock %}

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Training Sandbox{% endblock %}
+{% block content %}
+<h3>Training Sandbox</h3>
+<p class="text-muted">Confirmed findings from your organization that still need remediation.</p>
+<table class="table table-striped">
+  <thead><tr><th>Finding</th><th>Parameter</th><th>Target</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+    {% for f in findings %}
+    <tr>
+      <td>#{{ f.finding_id }}</td>
+      <td>{{ f.parameter_name }}</td>
+      <td>{{ f.scan_target.url }}</td>
+      <td>{{ f.remediation_status }}</td>
+      <td><a class="btn btn-sm btn-primary" href="{{ url_for('sandbox.challenge', finding_id=f.finding_id) }}">Fix it</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5">Nothing to work on right now — run a scan first.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

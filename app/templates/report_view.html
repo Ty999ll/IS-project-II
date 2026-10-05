@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Report — scan #{{ target.scan_id }}{% endblock %}
+{% block content %}
+<h3>Report for scan #{{ target.scan_id }}</h3>
+<p><strong>Target:</strong> {{ target.url }} &nbsp; <strong>Generated:</strong> {{ report.generation_timestamp.strftime('%Y-%m-%d %H:%M') }}</p>
+
+<div class="card">
+  <div class="card-body">
+    <pre style="white-space: pre-wrap; font-family: inherit;">{{ report.regulatory_guidance_text }}</pre>
+  </div>
+</div>
+
+<form method="post" action="{{ url_for('report.regenerate_report', scan_id=target.scan_id) }}" class="mt-3">
+  <button class="btn btn-outline-secondary btn-sm">Regenerate (pick up latest remediation status)</button>
+</form>
+<a class="btn btn-secondary mt-2" href="{{ url_for('scan.results', scan_id=target.scan_id) }}">Back to findings</a>
+{% endblock %}

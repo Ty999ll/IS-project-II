@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Fix finding #{{ finding.finding_id }}{% endblock %}
+{% block content %}
+<h3>Finding #{{ finding.finding_id }} — parameter '{{ finding.parameter_name }}'</h3>
+<p><strong>Target:</strong> {{ target.url }} &nbsp; <strong>Status:</strong> {{ finding.remediation_status }}</p>
+
+<div class="alert alert-info">
+  Illustrative vulnerable pattern (not DVWA's actual source — we don't have file access to it,
+  this represents the shape of the bug based on the detected parameter):
+  <pre>{{ snippet }}</pre>
+</div>
+
+<form method="post">
+  <div class="mb-3">
+    <label class="form-label">Your parameterized fix</label>
+    <textarea class="form-control" name="solution" rows="6" placeholder="e.g. cursor.execute('SELECT * FROM users WHERE {{ finding.parameter_name }} = ?', (value,))">{{ challenge.developer_response or '' }}</textarea>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">DVWA session cookie (needed to re-test against the live target)</label>
+    <input class="form-control" name="cookie" placeholder="PHPSESSID=...; security=low">
+  </div>
+  <button class="btn btn-primary">Submit fix</button>
+  <a class="btn btn-link" href="{{ url_for('sandbox.challenge_list') }}">Back to sandbox</a>
+</form>
+{% endblock %}

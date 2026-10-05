@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}New scan{% endblock %}
+{% block content %}
+<h3>Submit a target</h3>
+<form method="post" class="col-md-6">
+  <div class="mb-3">
+    <label class="form-label">Target URL</label>
+    <input class="form-control" name="url" placeholder="http://localhost/dvwa/vulnerabilities/sqli/" required>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Parameter names to test (comma-separated)</label>
+    <input class="form-control" name="parameters" placeholder="id" required>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">DVWA session cookie (paste from browser devtools)</label>
+    <input class="form-control" name="cookie" placeholder="PHPSESSID=...; security=low">
+    <div class="form-text">
+      First-slice limitation: log into DVWA manually in your browser, copy the Cookie
+      header from devtools, and paste it here. Automating DVWA's own login is a good
+      task for the next slice.
+    </div>
+  </div>
+  <button class="btn btn-primary">Run passive detection</button>
+</form>
+{% endblock %}

@@ -1,0 +1,18 @@
+# Python virtual environments
+venv/
+.venv/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Flask-SQLAlchemy puts the SQLite database here - never commit the database
+instance/
+*.db
+
+# Secrets (SECRET_KEY etc.)
+.env
+
+# OS clutter
+.DS_Store
+Thumbs.db
