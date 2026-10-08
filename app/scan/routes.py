@@ -3,8 +3,12 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash
 from flask_login import login_required, current_user
 
 from .. import db
-from ..models import ScanTarget, VulnerabilityFinding
-from .detection import run_passive_detection
+from ..models import ScanTarget, VulnerabilityFinding, DetectionBaseline
+from .detection import (
+    run_passive_detection,
+    calibrate_baseline,
+    run_active_time_based_detection,
+)
 
 scan_bp = Blueprint("scan", __name__)
 
@@ -51,8 +55,32 @@ def new_scan():
         db.session.add(target)
         db.session.flush()  # get target.scan_id
 
-        findings = run_passive_detection(url, param_names, cookie_header=cookie_header)
-        for f in findings:
+        # Stage 1: passive error-pattern detection on every parameter.
+        passive = run_passive_detection(url, param_names, cookie_header=cookie_header)
+        findings_by_param = {f["parameter_name"]: f for f in passive}
+
+        # Stage 2: escalate to active time-based detection only for parameters
+        # passive left CLEAN (per the Activity Diagram: confirmed or errored
+        # parameters are not re-tested). Needs an adaptive baseline first.
+        clean_params = [f["parameter_name"] for f in passive
+                        if f["finding_classification"] == "CLEAN"]
+        if clean_params:
+            base = calibrate_baseline(url, clean_params[0], cookie_header=cookie_header)
+            if base is not None:
+                db.session.add(DetectionBaseline(
+                    scan_id=target.scan_id,
+                    mean_response_ms=base["mean_response_ms"],
+                    stddev_response_ms=base["stddev_response_ms"],
+                    sample_count=base["sample_count"],
+                ))
+                active = run_active_time_based_detection(
+                    url, clean_params, base, cookie_header=cookie_header)
+                # Active result supersedes the passive CLEAN for these params.
+                for f in active:
+                    findings_by_param[f["parameter_name"]] = f
+
+        for param in param_names:
+            f = findings_by_param[param]
             db.session.add(VulnerabilityFinding(
                 scan_id=target.scan_id,
                 parameter_name=f["parameter_name"],
