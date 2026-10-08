@@ -3,7 +3,7 @@ Heuristic check on whether a developer's submitted fix "looks" parameterized.
 
 Honesty note: this is a naive text heuristic, not a real static analyzer or
 AST parser. It cannot execute or truly verify the submitted code — that's
-what the live re-test step (verification.py) is for. This function only
+what the live re-test step (in sandbox/routes.py) is for. This function only
 gates whether it's worth spending a live request on: it looks for the
 *absence* of raw string-concatenation patterns around the parameter and
 the *presence* of a placeholder/binding style. A determined developer could

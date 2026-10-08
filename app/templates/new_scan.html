@@ -5,7 +5,7 @@
 <form method="post" class="col-md-6">
   <div class="mb-3">
     <label class="form-label">Target URL</label>
-    <input class="form-control" name="url" placeholder="http://localhost/dvwa/vulnerabilities/sqli/" required>
+    <input class="form-control" name="url" placeholder="http://localhost/vulnerabilities/sqli/?Submit=Submit" required>
   </div>
   <div class="mb-3">
     <label class="form-label">Parameter names to test (comma-separated)</label>
@@ -19,6 +19,12 @@
       header from devtools, and paste it here. Automating DVWA's own login is a good
       task for the next slice.
     </div>
+  </div>
+  <div class="mb-3 form-check">
+    <input class="form-check-input" type="checkbox" name="authorized" id="authorized" value="yes" required>
+    <label class="form-check-label" for="authorized">
+      I confirm I own this target or have written permission to test it
+    </label>
   </div>
   <button class="btn btn-primary">Run passive detection</button>
 </form>

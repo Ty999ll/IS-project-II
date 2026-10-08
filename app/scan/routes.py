@@ -33,6 +33,11 @@ def new_scan():
         cookie_header = request.form.get("cookie", "").strip() or None
         param_names = [p.strip() for p in raw_params.split(",") if p.strip()]
 
+        # Server-side check too — the HTML `required` attribute alone can be bypassed.
+        if request.form.get("authorized") != "yes":
+            flash("Confirm you own this target or have written permission to test it.", "error")
+            return render_template("new_scan.html")
+
         if not url or not param_names:
             flash("A target URL and at least one parameter name are required.", "error")
             return render_template("new_scan.html")
@@ -68,5 +73,8 @@ def new_scan():
 @login_required
 def results(scan_id):
     target = ScanTarget.query.get_or_404(scan_id)
+    if target.initiator.org_id != current_user.org_id:
+        flash("You can only view scans from your own organization.", "error")
+        return redirect(url_for("scan.dashboard"))
     findings = VulnerabilityFinding.query.filter_by(scan_id=scan_id).all()
     return render_template("results.html", target=target, findings=findings)

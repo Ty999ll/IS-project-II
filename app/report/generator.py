@@ -3,11 +3,11 @@ Generates the plain-language + regulatory-guidance text for a scan's report.
 
 Honesty note: this is a template-based generator, not a legal/compliance
 engine. It produces a consistent, readable paragraph per confirmed finding
-referencing the general shape of data-protection obligations (the proposal
-document itself is inconsistent about which specific act/section applies —
-see docx section 3.2.3 vs. the abstract — so this deliberately stays generic
-rather than citing a specific section number that may not be correct for
-your jurisdiction. Swap in the exact citation once that's confirmed.)
+referencing the general shape of data-protection obligations. It does not yet
+include what the proposal asks for: Kenya's Data Protection Act (2019)
+Section 43, the 72-hour ODPC notification window, and the penalty range.
+(Proposal section 3.2.3 says "UK Data Protection Act"; everywhere else it
+cites Kenya's DPA, so treat that as a typo.)
 """
 
 GUIDANCE_TEMPLATE = (

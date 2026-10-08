@@ -41,8 +41,11 @@ def challenge_list():
 def challenge(finding_id):
     finding = VulnerabilityFinding.query.get_or_404(finding_id)
     target = finding.scan_target
+    if target.initiator.org_id != current_user.org_id:
+        flash("You can only open challenges for findings from your own organization.", "error")
+        return redirect(url_for("sandbox.challenge_list"))
 
-    ch = TrainingChallenge.query.filter_by(finding_id=finding_id).first()
+    ch =TrainingChallenge.query.filter_by(finding_id=finding_id).first()
     # Simplification: one challenge per finding, not per (finding, developer) pair —
     # if two developers open the same finding they'll share and overwrite the same
     # attempt. Fine for a first-slice single-developer demo; worth splitting out

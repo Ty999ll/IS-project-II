@@ -25,6 +25,7 @@ docker run -d -p 80:80 vulnerables/web-dvwa
 ```
 Log into DVWA in your browser (admin / password), click "Create / Reset Database",
 set security level to Low, then copy the Cookie header from your browser's
-devtools into the scan form.
+devtools into the scan form. Use `http://localhost/vulnerabilities/sqli/?Submit=Submit`
+as the target URL and `id` as the parameter (DVWA only runs the query when `Submit` is present).
 
 Only scan systems you own or have written permission to test.
