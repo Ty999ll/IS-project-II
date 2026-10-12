@@ -37,7 +37,7 @@ def new_scan():
         cookie_header = request.form.get("cookie", "").strip() or None
         param_names = [p.strip() for p in raw_params.split(",") if p.strip()]
 
-        # Server-side check too — the HTML `required` attribute alone can be bypassed.
+        # check this on the server as well because the html `required` can be bypassed
         if request.form.get("authorized") != "yes":
             flash("Confirm you own this target or have written permission to test it.", "error")
             return render_template("new_scan.html")
@@ -53,15 +53,15 @@ def new_scan():
             scan_status="RUNNING",
         )
         db.session.add(target)
-        db.session.flush()  # get target.scan_id
+        db.session.flush()  # so target.scan_id is set
 
-        # Stage 1: passive error-pattern detection on every parameter.
+        # Stage 1 - passive error pattern detection on all the parameters
         passive = run_passive_detection(url, param_names, cookie_header=cookie_header)
         findings_by_param = {f["parameter_name"]: f for f in passive}
 
-        # Stage 2: escalate to active time-based detection only for parameters
-        # passive left CLEAN (per the Activity Diagram: confirmed or errored
-        # parameters are not re-tested). Needs an adaptive baseline first.
+        # Stage 2 - time based detection, but only for the params that passive
+        # said were CLEAN. Confirmed or errored ones don't get tested again
+        # (same as the Activity Diagram). Have to calibrate the baseline first.
         clean_params = [f["parameter_name"] for f in passive
                         if f["finding_classification"] == "CLEAN"]
         if clean_params:
@@ -75,7 +75,7 @@ def new_scan():
                 ))
                 active = run_active_time_based_detection(
                     url, clean_params, base, cookie_header=cookie_header)
-                # Active result supersedes the passive CLEAN for these params.
+                # replace the passive CLEAN result with the active one
                 for f in active:
                     findings_by_param[f["parameter_name"]] = f
 

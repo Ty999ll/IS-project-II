@@ -1,47 +1,45 @@
 """
-SQL-injection detection: passive error-pattern, then active time-based.
+SQL injection detection. Does passive error pattern first, then active time based.
 
-Two of the three techniques in the proposal are implemented here:
+So far I've done 2 of the 3 techniques from the proposal:
 
-  1. run_passive_detection()     — error-pattern matching (the simplest).
-  2. run_active_time_based_detection() — timing-based, escalated to only when
-     passive finds nothing, using an adaptive baseline (see calibrate_baseline).
+  1. run_passive_detection() - looks for SQL error messages in the response
+     (the simplest one).
+  2. run_active_time_based_detection() - timing based, only runs if passive
+     didn't find anything. Uses an adaptive baseline (see calibrate_baseline).
 
-Boolean-based blind is still NOT implemented; it's the next slice.
+Boolean based blind is NOT done yet, that's next.
 
-Active time-based detection works the way the Activity Diagram describes:
-first measure the target's normal response time (calibrate_baseline), then
-inject a delay payload and check whether the response is slower than the
-baseline by a clear margin. To avoid false positives from network jitter, the
-delay must show up CONSISTENTLY across repeated requests; a delay that appears
-on some repeats but not all is reported as POSSIBLY_VULNERABLE rather than
-confirmed.
+How the time based part works (same as the Activity Diagram): first measure
+how long the target normally takes to respond (calibrate_baseline), then send
+a payload that makes the DB sleep and see if the response is a lot slower than
+normal. Network lag can cause false positives so the delay has to happen on
+every repeat. If it only happens on some of them it's marked
+POSSIBLY_VULNERABLE instead of confirmed.
 
-Limitation to be upfront about: DVWA needs an authenticated session +
-a security-level cookie to actually respond to requests. Pass that in as a raw
-cookie header (copied from your browser's devtools after logging into DVWA
-manually) via the "cookie" field on the scan form, rather than automating
-DVWA's own login. Automating that is a reasonable "next slice" task.
+Limitation: DVWA only responds properly if you're logged in and have the
+security level cookie. For now you have to log into DVWA yourself, copy the
+cookie header from the browser devtools and paste it into the "cookie" field
+on the scan form. Doing the DVWA login automatically is a TODO.
 """
 import statistics
 import time
 
 import requests
 
-# --- Active time-based tuning ---------------------------------------------
-DELAY_SECONDS = 5          # how long a vulnerable query is told to sleep
-ACTIVE_REPEATS = 3         # timed requests used to confirm a delay is consistent
-# A response counts as "delayed" if it exceeds the baseline mean by more than
-# this many standard deviations PLUS a fixed margin (ms). The margin sits below
-# DELAY_SECONDS so a real ~5s sleep clears it comfortably, while ordinary jitter
-# (a few hundred ms over the mean) does not.
+# settings for the time based detection
+DELAY_SECONDS = 5          # how many seconds the payload makes the DB sleep
+ACTIVE_REPEATS = 3         # how many times to repeat to make sure the delay is consistent
+# a response is "delayed" if it's slower than the baseline mean + 3 standard
+# deviations + a fixed margin (in ms). The margin is less than DELAY_SECONDS so
+# a real 5s sleep still gets past it, but normal lag (a few hundred ms) won't.
 BASELINE_STDDEV_MULTIPLIER = 3
 DELAY_MARGIN_MS = 4000
-# Must exceed DELAY_SECONDS so a successful sleep returns rather than timing out.
+# has to be bigger than DELAY_SECONDS or the request times out before the sleep finishes
 ACTIVE_TIMEOUT = DELAY_SECONDS + 15
 
-# Delay payloads. {d} is filled with DELAY_SECONDS. MySQL/MariaDB (DVWA) use
-# SLEEP(); the WAITFOR variant covers SQL Server targets.
+# payloads that cause a delay. {d} gets replaced with DELAY_SECONDS.
+# SLEEP() is for MySQL/MariaDB (which DVWA uses), WAITFOR is for SQL Server
 TIME_PAYLOAD_TEMPLATES = [
     "' AND SLEEP({d})-- -",
     "' OR SLEEP({d})-- -",
@@ -66,17 +64,17 @@ PROBE_PAYLOADS = [
     "''",
     "\"",
     "' OR '1'='1",
-    "' OR SLEEP(0)-- -",   # harmless variant, kept simple/passive on purpose
+    "' OR SLEEP(0)-- -",   # SLEEP(0) so it doesn't actually delay anything, keeps it passive
     "1' ORDER BY 100-- -",
 ]
 
 
 def run_passive_detection(url, param_names, cookie_header=None, timeout=6):
     """
-    Returns a list of finding dicts:
+    Returns a list of dicts like this:
       {parameter_name, detection_method, payload_used, finding_classification}
-    One dict per parameter tested (worst-case classification kept if
-    multiple payloads for the same parameter trigger a signature).
+    There's one dict for each parameter. It stops at the first payload that
+    triggers an error so that one is what gets saved.
     """
     headers = {"Cookie": cookie_header} if cookie_header else {}
     results = []
@@ -94,8 +92,8 @@ def run_passive_detection(url, param_names, cookie_header=None, timeout=6):
                     timeout=timeout,
                 )
             except requests.RequestException as exc:
-                # Target unreachable — surface as its own classification rather
-                # than silently reporting "clean".
+                # couldn't reach the target. Mark it as SCAN_ERROR so it
+                # doesn't wrongly show up as CLEAN
                 classification = "SCAN_ERROR"
                 triggering_payload = f"(request failed: {exc})"
                 break
@@ -104,7 +102,7 @@ def run_passive_detection(url, param_names, cookie_header=None, timeout=6):
             if any(sig in body_lower for sig in ERROR_SIGNATURES):
                 classification = "CONFIRMED_VULNERABLE"
                 triggering_payload = payload
-                break  # no need to try more payloads on this param
+                break  # found it, no point trying the other payloads
 
         results.append({
             "parameter_name": param,
@@ -117,11 +115,11 @@ def run_passive_detection(url, param_names, cookie_header=None, timeout=6):
 
 
 def _elapsed_ms(url, param, payload, headers, timeout):
-    """Send one request and return (elapsed_ms, timed_out, error).
+    """Sends one request and returns (elapsed_ms, timed_out, error).
 
-    A timeout is treated as a strong "delayed" signal rather than a failure:
-    a working SLEEP() payload can push the response past the timeout. Other
-    request errors (unreachable host, etc.) are returned as `error`.
+    If it times out I count that as delayed, not as a failure, because a
+    SLEEP() payload that works can make the request go past the timeout.
+    Any other error (like the host being down) gets returned as `error`.
     """
     start = time.monotonic()
     try:
@@ -134,12 +132,12 @@ def _elapsed_ms(url, param, payload, headers, timeout):
 
 
 def calibrate_baseline(url, param, cookie_header=None, samples=5, timeout=10):
-    """Measure the target's normal response time for a parameter.
+    """Measures how long the target normally takes to respond.
 
-    Sends `samples` benign requests (a plain value, no injection) and returns
-    {mean_response_ms, stddev_response_ms, sample_count}, or None if every
-    request failed (target unreachable). This is the adaptive part: the delay
-    threshold is derived from THIS target's live timings, not a fixed number.
+    Sends a few normal requests (just the value "1", no injection) and returns
+    {mean_response_ms, stddev_response_ms, sample_count}. Returns None if all
+    of them failed (target is down). This is the "adaptive" part, the threshold
+    comes from timing this target instead of using a hardcoded number.
     """
     headers = {"Cookie": cookie_header} if cookie_header else {}
     timings = []
@@ -154,27 +152,27 @@ def calibrate_baseline(url, param, cookie_header=None, samples=5, timeout=10):
 
     return {
         "mean_response_ms": statistics.mean(timings),
-        # pstdev (not stdev) so a single successful sample yields 0 rather than raising.
+        # using pstdev instead of stdev because stdev crashes if there's only 1 sample
         "stddev_response_ms": statistics.pstdev(timings),
         "sample_count": len(timings),
     }
 
 
 def run_active_time_based_detection(url, param_names, baseline, cookie_header=None):
-    """Time-based detection for parameters passive detection left CLEAN.
+    """Time based detection, for the params that passive detection said were CLEAN.
 
-    `baseline` is the dict returned by calibrate_baseline(). For each parameter,
-    inject a delay payload and compare the response time against the baseline.
-    A response is "delayed" when it exceeds:
+    `baseline` is what calibrate_baseline() returns. For each parameter we send
+    a sleep payload and compare the response time to the baseline. It counts
+    as "delayed" if it's more than:
         mean + BASELINE_STDDEV_MULTIPLIER * stddev + DELAY_MARGIN_MS
 
-    Classification per parameter:
-      - all ACTIVE_REPEATS requests delayed      -> CONFIRMED_VULNERABLE
-      - some (but not all) repeats delayed        -> POSSIBLY_VULNERABLE
-      - none delayed                              -> CLEAN
-      - host became unreachable mid-test          -> SCAN_ERROR
+    How each parameter gets classified:
+      - all the repeats were delayed       -> CONFIRMED_VULNERABLE
+      - only some of them were delayed     -> POSSIBLY_VULNERABLE
+      - none were delayed                  -> CLEAN
+      - target went down during the test   -> SCAN_ERROR
 
-    Returns a list of finding dicts in the same shape as run_passive_detection().
+    Returns a list of dicts in the same format as run_passive_detection().
     """
     headers = {"Cookie": cookie_header} if cookie_header else {}
     threshold_ms = (
@@ -191,7 +189,7 @@ def run_active_time_based_detection(url, param_names, baseline, cookie_header=No
         for template in TIME_PAYLOAD_TEMPLATES:
             payload = template.format(d=DELAY_SECONDS)
 
-            # Probe once; only spend the extra repeats if the first looks delayed.
+            # try once first, only do the repeats if this one is slow (saves time)
             elapsed, _timed_out, error = _elapsed_ms(
                 url, param, payload, headers, ACTIVE_TIMEOUT)
             if error is not None:
@@ -199,9 +197,9 @@ def run_active_time_based_detection(url, param_names, baseline, cookie_header=No
                 triggering_payload = f"(request failed: {error})"
                 break
             if elapsed <= threshold_ms:
-                continue  # this payload didn't delay; try the next one
+                continue  # no delay, move on to the next payload
 
-            # First request was slow — repeat to check the delay is consistent.
+            # first one was slow so repeat it to check it wasn't just lag
             delayed_count = 1
             aborted = False
             for _ in range(ACTIVE_REPEATS - 1):
@@ -220,10 +218,10 @@ def run_active_time_based_detection(url, param_names, baseline, cookie_header=No
             if delayed_count == ACTIVE_REPEATS:
                 classification = "CONFIRMED_VULNERABLE"
                 triggering_payload = payload
-                break  # confirmed; no need to try other payloads
+                break  # confirmed, don't need to try the other payloads
             else:
-                # Inconsistent — keep as a lead but keep trying other payloads
-                # in case one delays consistently.
+                # not consistent, so mark it as possibly vulnerable but keep
+                # going in case another payload delays every time
                 classification = "POSSIBLY_VULNERABLE"
                 triggering_payload = payload
 

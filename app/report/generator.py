@@ -1,13 +1,13 @@
 """
-Generates the plain-language + regulatory-guidance text for a scan's report.
+Builds the report text (plain language + data protection guidance) for a scan.
 
-Honesty note: this is a template-based generator, not a legal/compliance
-engine. It produces a consistent, readable paragraph per confirmed finding
-referencing the general shape of data-protection obligations. It does not yet
-include what the proposal asks for: Kenya's Data Protection Act (2019)
-Section 43, the 72-hour ODPC notification window, and the penalty range.
-(Proposal section 3.2.3 says "UK Data Protection Act"; everywhere else it
-cites Kenya's DPA, so treat that as a typo.)
+Limitations: this just fills in a template, it's not a proper legal/compliance
+engine. You get one paragraph per confirmed finding that talks about data
+protection obligations in general terms. It still doesn't have the stuff the
+proposal asks for i.e. Kenya's Data Protection Act (2019) Section 43, the
+72-hour ODPC notification and the penalty range. TODO add these.
+(Section 3.2.3 of my proposal says "UK Data Protection Act" by mistake, it
+should be Kenya's DPA like the rest of the document.)
 """
 
 GUIDANCE_TEMPLATE = (
@@ -30,7 +30,7 @@ METHOD_LABELS = {
 
 
 def build_report_text(findings):
-    """findings: list of VulnerabilityFinding rows. Returns the full report body text."""
+    """Takes a list of VulnerabilityFinding rows and returns the report text."""
     confirmed = [f for f in findings if f.finding_classification == "CONFIRMED_VULNERABLE"]
 
     if not confirmed:

@@ -1,35 +1,33 @@
 """
-Heuristic check on whether a developer's submitted fix "looks" parameterized.
+Checks if the developer's fix "looks" like a parameterized query.
 
-Honesty note: this is a naive text heuristic, not a real static analyzer or
-AST parser. It cannot execute or truly verify the submitted code — that's
-what the live re-test step (in sandbox/routes.py) is for. This function only
-gates whether it's worth spending a live request on: it looks for the
-*absence* of raw string-concatenation patterns around the parameter and
-the *presence* of a placeholder/binding style. A determined developer could
-fool this heuristic; a real implementation would parse the code properly.
-That's a documented "next slice" improvement, not a hidden gap.
+Limitations: this is just regex matching on the text, not a real static
+analyser or AST parser. It can't run the code or properly verify it, that's
+why there's the live re-test in sandbox/routes.py. This check only decides if
+it's worth doing the re-test. It looks for string concatenation (bad) and
+a placeholder like ?, %s or :name (good). Someone could easily trick it if
+they wanted to. Parsing the code properly would be better, planned for later.
 """
 import re
 
 CONCAT_PATTERNS = [
-    r"'\s*\+", r"\+\s*'",           # '...' + var  /  var + '...'
-    r'"\s*\+', r'\+\s*"',           # "..." + var
-    r"%s\s*%\s*",                    # old % string formatting directly building SQL
-    r"f['\"].*\{.*\}.*['\"]",       # f-string interpolation directly in a query literal
-    r"\.format\(",                   # .format( ... ) building a query string
+    r"'\s*\+", r"\+\s*'",           # '...' + var  or  var + '...'
+    r'"\s*\+', r'\+\s*"',           # same thing with double quotes
+    r"%s\s*%\s*",                    # old style % formatting to build the SQL
+    r"f['\"].*\{.*\}.*['\"]",       # f-string putting the value straight in the query
+    r"\.format\(",                   # using .format() to build the query
 ]
 
 PLACEHOLDER_PATTERNS = [
-    r"\?",            # sqlite3 / generic positional placeholder
-    r"%s",            # psycopg2 / MySQLdb style (only counts if not caught by CONCAT check above)
-    r":\w+",          # named binding, e.g. :id
-    r"\bexecute\([^,]+,\s*\(",   # cursor.execute(query, (params,)) pattern
+    r"\?",            # sqlite3 placeholder
+    r"%s",            # psycopg2 / MySQLdb placeholder (the concat check above catches the bad use of %s)
+    r":\w+",          # named placeholder like :id
+    r"\bexecute\([^,]+,\s*\(",   # cursor.execute(query, (params,))
 ]
 
 
 def evaluate_submission(code_text):
-    """Returns (passed: bool, feedback: str)."""
+    """Returns a tuple (passed, feedback) where passed is True/False."""
     if not code_text or not code_text.strip():
         return False, "Submit a parameterized version of the query before checking."
 

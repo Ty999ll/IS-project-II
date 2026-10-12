@@ -1,7 +1,8 @@
 """
-Data model — field-for-field matches Database_Schema.drawio / Class_Diagram.drawio.
-Keep this file as the single source of truth: if you change a field here,
-update the diagrams too (or vice versa) so the two never drift apart again.
+Database models for the project. These are supposed to match the Database Schema
+and Class Diagram in docs/ field for field.
+NOTE: if I change a field here I need to update the diagrams as well (and the
+other way round) otherwise they won't match anymore.
 """
 from datetime import datetime
 from flask_login import UserMixin
@@ -30,8 +31,8 @@ class User(UserMixin, db.Model):
 
     scan_targets = db.relationship("ScanTarget", backref="initiator", lazy=True)
 
-    # Flask-Login needs get_id(); UserMixin supplies it from primary key attr named 'id'
-    # by default, so we alias explicitly since our PK is 'user_id' not 'id'.
+    # Flask-Login calls get_id(). UserMixin's version looks for a column called 'id'
+    # but my primary key is 'user_id' so I had to override it here
     def get_id(self):
         return str(self.user_id)
 
@@ -47,7 +48,7 @@ class ScanTarget(db.Model):
     scan_id = db.Column(db.Integer, primary_key=True)
     initiated_by = db.Column(db.Integer, db.ForeignKey("user.user_id"), nullable=False)
     url = db.Column(db.String(500), nullable=False)
-    parameters = db.Column(db.Text)          # comma-separated or JSON string of param names
+    parameters = db.Column(db.Text)          # param names, comma separated (or a JSON string)
     scan_status = db.Column(db.String(20), default="PENDING")  # PENDING / RUNNING / COMPLETE
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -60,14 +61,15 @@ class VulnerabilityFinding(db.Model):
     scan_id = db.Column(db.Integer, db.ForeignKey("scan_target.scan_id"), nullable=False)
     parameter_name = db.Column(db.String(120))
     detection_method = db.Column(db.String(30))          # PASSIVE_ERROR_PATTERN / ACTIVE_TIME_BASED / BOOLEAN_BLIND
-    vulnerability_type = db.Column(db.String(30), default="SQLI")  # scaffolds future XSS class
+    vulnerability_type = db.Column(db.String(30), default="SQLI")  # only SQLI for now, XSS might be added later
     finding_classification = db.Column(db.String(30))    # CONFIRMED_VULNERABLE / POSSIBLY_VULNERABLE / CLEAN
     payload_used = db.Column(db.Text)
     remediation_status = db.Column(db.String(20), default="UNRESOLVED")
     verified_at = db.Column(db.DateTime, nullable=True)
 
 
-# --- Not built in the first 30% slice, but declared now so nothing else has to change later ---
+# these tables were added early so I wouldn't have to change the schema later
+# (DetectionBaseline is used by the time-based scan now, the others are only partly used)
 
 class DetectionBaseline(db.Model):
     __tablename__ = "detection_baseline"

@@ -9,9 +9,9 @@ from ..scan.detection import run_passive_detection
 
 sandbox_bp = Blueprint("sandbox", __name__)
 
-# Illustrative only — we don't have access to DVWA's actual source file for a
-# given parameter, so this is a representative "this is the shape of the bug"
-# snippet, not the real vulnerable line. Said explicitly in the template too.
+# This is just an example snippet. We can't see DVWA's actual source code for
+# the parameter so this shows what the bug usually looks like, it's not the
+# real vulnerable line (the template also says this)
 ILLUSTRATIVE_SNIPPET = (
     "# Illustrative pattern for parameter '{param}' — not DVWA's actual source\n"
     "query = \"SELECT * FROM users WHERE {param} = '\" + request.args.get('{param}') + \"'\"\n"
@@ -46,10 +46,10 @@ def challenge(finding_id):
         return redirect(url_for("sandbox.challenge_list"))
 
     ch =TrainingChallenge.query.filter_by(finding_id=finding_id).first()
-    # Simplification: one challenge per finding, not per (finding, developer) pair —
-    # if two developers open the same finding they'll share and overwrite the same
-    # attempt. Fine for a first-slice single-developer demo; worth splitting out
-    # (add developer to the lookup key) before multiple people use this concurrently.
+    # NOTE: there's only one challenge per finding, not one per developer, so if
+    # two developers open the same finding they will overwrite each other's attempt.
+    # It's ok for the demo with one developer but I should add the developer to
+    # the lookup later if more people are going to use it at the same time.
     if ch is None:
         ch = TrainingChallenge(
             finding_id=finding_id,
@@ -80,7 +80,7 @@ def challenge(finding_id):
             return render_template("sandbox_challenge.html", finding=finding, target=target,
                                     challenge=ch, snippet=snippet_for(finding))
 
-        # verifyRemediation() — re-test the exact field against the live target
+        # this is verifyRemediation() from the diagrams, re-test the same field on the live target
         retest = run_passive_detection(target.url, [finding.parameter_name], cookie_header=cookie_header)
         still_vulnerable = retest[0]["finding_classification"] == "CONFIRMED_VULNERABLE"
 

@@ -17,7 +17,7 @@ def create_app():
     login_manager.init_app(app)
     login_manager.login_view = "auth.login"
 
-    from . import models  # noqa: F401  (import so db.create_all() sees the tables)
+    from . import models  # noqa: F401  (need to import this so db.create_all() can find the tables)
 
     @login_manager.user_loader
     def load_user(user_id):
