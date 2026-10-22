@@ -20,6 +20,18 @@ ILLUSTRATIVE_SNIPPET = (
     "cursor.execute(query)"
 )
 
+# the model parameterized fix for the illustrative snippet, stored on the
+# challenge so there's a reference solution (roadmap item 6)
+MODEL_SOLUTION = (
+    "# Parameterized fix for '{param}' — the value is bound, not concatenated\n"
+    "query = \"SELECT * FROM users WHERE {param} = %s\"\n"
+    "cursor.execute(query, (request.args.get('{param}'),))"
+)
+
+# findings the sandbox offers training for: confirmed and possibly-vulnerable
+# (item 6 - possibly-vulnerable findings get a challenge too, not just confirmed)
+TRAINABLE = ("CONFIRMED_VULNERABLE", "POSSIBLY_VULNERABLE")
+
 
 @sandbox_bp.route("/sandbox")
 @login_required
@@ -29,7 +41,7 @@ def challenge_list():
         .join(ScanTarget, VulnerabilityFinding.scan_id == ScanTarget.scan_id)
         .join(User, ScanTarget.initiated_by == User.user_id)
         .filter(
-            VulnerabilityFinding.finding_classification == "CONFIRMED_VULNERABLE",
+            VulnerabilityFinding.finding_classification.in_(TRAINABLE),
             User.org_id == current_user.org_id,
             VulnerabilityFinding.remediation_status != "VERIFIED_RESOLVED",
         )
@@ -57,6 +69,10 @@ def challenge(finding_id):
             finding_id=finding_id,
             assigned_to=current_user.user_id,
             challenge_type="PARAMETERIZED_QUERY_FIX",
+            # store the snippet and the model fix on the challenge (item 6), so
+            # they're not just built on the fly / left unset
+            vulnerable_code_snippet=snippet_for(finding),
+            correct_parameterized_solution=MODEL_SOLUTION.format(param=finding.parameter_name),
         )
         db.session.add(ch)
         db.session.commit()

@@ -10,10 +10,13 @@
   <pre>{{ snippet }}</pre>
 </div>
 
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+
 <form method="post">
   <div class="mb-3">
     <label class="form-label">Your parameterized fix</label>
     <textarea class="form-control" name="solution" rows="6" placeholder="e.g. cursor.execute('SELECT * FROM users WHERE {{ finding.parameter_name }} = ?', (value,))">{{ challenge.developer_response or '' }}</textarea>
+    <div class="form-text">Edit in the code editor below; it submits with the form.</div>
   </div>
   <div class="mb-3">
     {% if saved_session %}
@@ -29,4 +32,20 @@
   <button class="btn btn-primary">Submit fix</button>
   <a class="btn btn-link" href="{{ url_for('sandbox.challenge_list') }}">Back to sandbox</a>
 </form>
+
+{# CodeMirror editor for the fix (roadmap item 6), replacing the plain textarea.
+   It falls back to the textarea if the CDN can't load. cm.save() copies the
+   editor content back into the textarea so the form submits it. #}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+<script>
+(function () {
+  if (typeof CodeMirror === "undefined") { return; }  // CDN blocked: keep the textarea
+  var ta = document.querySelector("textarea[name=solution]");
+  var cm = CodeMirror.fromTextArea(ta, {
+    lineNumbers: true, mode: "python", viewportMargin: Infinity
+  });
+  ta.form.addEventListener("submit", function () { cm.save(); });
+})();
+</script>
 {% endblock %}
