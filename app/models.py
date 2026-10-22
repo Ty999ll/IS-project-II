@@ -96,5 +96,9 @@ class ReportDocument(db.Model):
     __tablename__ = "report_document"
     report_id = db.Column(db.Integer, primary_key=True)
     scan_id = db.Column(db.Integer, db.ForeignKey("scan_target.scan_id"), nullable=False)
+    # roadmap item 12: the same findings produce one report per reader. Added
+    # field (no existing field renamed/removed). ScanTarget -> ReportDocument is
+    # now 1:many (one report per audience); diagrams to be updated to match.
+    target_audience = db.Column(db.String(30), default="MANAGEMENT")  # MANAGEMENT / HR_DATA_PROTECTION / IT_GENERALIST / DEVELOPER
     regulatory_guidance_text = db.Column(db.Text)
     generation_timestamp = db.Column(db.DateTime, default=datetime.utcnow)

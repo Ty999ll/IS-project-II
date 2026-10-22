@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Scan #{{ target.scan_id }} report — {{ audience_label }}</title>
+  <style>
+    body { font-family: Georgia, "Times New Roman", serif; max-width: 750px; margin: 2rem auto; padding: 0 1rem; color: #000; background: #fff; }
+    h1 { font-size: 1.4rem; margin-bottom: .25rem; }
+    .meta { font-size: .9rem; color: #444; margin-bottom: 1.5rem; }
+    pre { white-space: pre-wrap; font-family: inherit; font-size: 1rem; line-height: 1.5; }
+    .actions { margin-bottom: 1rem; }
+    @media print { .actions { display: none; } body { margin: 0; } }
+  </style>
+</head>
+<body>
+  <div class="actions">
+    <button onclick="window.print()">Print / save as PDF</button>
+  </div>
+  <h1>SQL injection scan report — {{ audience_label }}</h1>
+  <div class="meta">
+    Scan #{{ target.scan_id }} &middot; Target: {{ target.url }}<br>
+    Generated: {{ report.generation_timestamp.strftime('%Y-%m-%d %H:%M') }} UTC
+  </div>
+  <pre>{{ report.regulatory_guidance_text }}</pre>
+</body>
+</html>
