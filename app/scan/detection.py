@@ -246,7 +246,8 @@ def authenticated_cookie_header(login_url, username, password, extra_cookie=None
     try:
         resp = session.get(login_url, timeout=timeout)
     except requests.RequestException as exc:
-        return None, f"Couldn't reach the login page - check the login URL ({exc})."
+        return None, ("Couldn't reach the login page. Check the login URL is correct "
+                      "and the site is running.")
 
     parser = _LoginFormParser()
     try:
@@ -282,7 +283,8 @@ def authenticated_cookie_header(login_url, username, password, extra_cookie=None
         else:
             login_resp = session.get(action_url, params=data, timeout=timeout)
     except requests.RequestException as exc:
-        return None, f"Couldn't submit the login form ({exc})."
+        return None, ("Couldn't submit the login form. Check the login URL is correct "
+                      "and the site is running.")
 
     body = login_resp.text.lower()
     failed_markers = ["login failed", "password incorrect", "invalid credentials",
@@ -367,7 +369,8 @@ def discover_fields(url, cookie_header=None, timeout=6):
         # scan can go ahead on those alone
         for name in query_params:
             _add(name, "GET", url)
-        return {"fields": fields, "error": f"Couldn't fetch the page to discover fields ({exc})."}
+        return {"fields": fields, "error": ("Couldn't reach the target to find its input fields. "
+                                            "Check the address is correct and the site is running.")}
 
     parser = _FormParser()
     try:
