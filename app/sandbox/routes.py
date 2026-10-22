@@ -5,7 +5,9 @@ from flask_login import login_required, current_user
 from .. import db
 from ..models import VulnerabilityFinding, TrainingChallenge, ScanTarget, User
 from .evaluation import evaluate_submission
-from ..scan.detection import run_passive_detection, field_method_for
+from ..scan.detection import (run_passive_detection, field_method_for, session_still_valid,
+                              siblings_for)
+from ..scan import target_sessions
 
 sandbox_bp = Blueprint("sandbox", __name__)
 
@@ -72,18 +74,37 @@ def challenge(finding_id):
             db.session.commit()
             flash(feedback, "error")
             return render_template("sandbox_challenge.html", finding=finding, target=target,
-                                    challenge=ch, snippet=snippet_for(finding))
+                                    challenge=ch, snippet=snippet_for(finding),
+                                    saved_session=target_sessions.get_saved(target.url))
+
+        # use the login saved when the site was scanned, unless a cookie was pasted
+        saved = target_sessions.get_saved(target.url)
+        expired = False
+        if not cookie_header and saved:
+            if session_still_valid(target.url, saved["cookie"]):
+                cookie_header = saved["cookie"]
+            else:
+                target_sessions.forget(target.url)
+                flash("Your saved login to this site has expired. Run a new scan with the "
+                      "login details (or paste a session cookie) to re-test.", "warning")
+                expired = True
 
         if not cookie_header:
-            flash("Syntax looks parameterized. Paste the DVWA session cookie too so this can "
-                  "be re-tested against the live target before it's marked resolved.", "warning")
+            if not expired:
+                flash("Syntax looks parameterized. To re-test it against the live target "
+                      "before it's marked resolved, log in to the site (run a scan with its "
+                      "login details) or paste a session cookie.", "warning")
             return render_template("sandbox_challenge.html", finding=finding, target=target,
-                                    challenge=ch, snippet=snippet_for(finding))
+                                    challenge=ch, snippet=snippet_for(finding),
+                                    saved_session=target_sessions.get_saved(target.url))
 
         # this is verifyRemediation() from the diagrams, re-test the same field on the live target
+        # resubmitting the field's whole form (siblings), the same way the scan did
         method = field_method_for(target.parameters, finding.parameter_name, url=target.url)
+        sibs = {finding.parameter_name: siblings_for(target.parameters, finding.parameter_name, url=target.url)}
         retest = run_passive_detection(
-            target.url, [finding.parameter_name], cookie_header=cookie_header, method=method)
+            target.url, [finding.parameter_name], cookie_header=cookie_header, method=method,
+            siblings=sibs)
         still_vulnerable = retest[0]["finding_classification"] == "CONFIRMED_VULNERABLE"
 
         if still_vulnerable:
@@ -101,7 +122,8 @@ def challenge(finding_id):
         return redirect(url_for("sandbox.challenge_list"))
 
     return render_template("sandbox_challenge.html", finding=finding, target=target,
-                            challenge=ch, snippet=snippet_for(finding))
+                            challenge=ch, snippet=snippet_for(finding),
+                                    saved_session=target_sessions.get_saved(target.url))
 
 
 def snippet_for(finding):

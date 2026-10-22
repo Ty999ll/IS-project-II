@@ -14,7 +14,8 @@
 </head>
 <body>
   <div class="actions">
-    <button onclick="window.print()">Print / save as PDF</button>
+    <button onclick="window.print()">Print</button>
+    <a href="{{ url_for('report.download_pdf', scan_id=target.scan_id, audience=audience) }}">Download PDF instead</a>
   </div>
   <h1>SQL injection scan report — {{ audience_label }}</h1>
   <div class="meta">

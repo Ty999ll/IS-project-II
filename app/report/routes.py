@@ -4,6 +4,7 @@ from flask_login import login_required, current_user
 from .. import db
 from ..models import ScanTarget, VulnerabilityFinding, ReportDocument
 from .generator import build_report_text, AUDIENCES, AUDIENCE_LABELS
+from .pdf import build_pdf
 
 # Blueprint for all report-related pages
 report_bp = Blueprint("report", __name__)
@@ -97,7 +98,7 @@ def print_report(scan_id):
     audience = _audience_from(request.args)
     report = _latest_report(scan_id, audience)
     return render_template("report_print.html", target=target, report=report,
-                           audience_label=AUDIENCE_LABELS[audience])
+                           audience=audience, audience_label=AUDIENCE_LABELS[audience])
 
 
 # Download the report as a plain-text file that opens anywhere
@@ -120,4 +121,26 @@ def download_report(scan_id):
     )
     filename = f"scan{target.scan_id}_{audience.lower()}_report.txt"
     return Response(body, mimetype="text/plain",
+                    headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+
+# Download the report as a real PDF file (built server-side, no print dialog needed)
+@report_bp.route("/scan/<int:scan_id>/report/pdf")
+@login_required
+def download_pdf(scan_id):
+    target = _own_scan(scan_id)
+    if target is None:
+        flash("You can only download reports for scans you submitted.", "error")
+        return redirect(url_for("scan.dashboard"))
+
+    audience = _audience_from(request.args)
+    report = _latest_report(scan_id, audience)
+    pdf = build_pdf(
+        f"SQL injection scan report - {AUDIENCE_LABELS[audience]}",
+        [f"Scan #{target.scan_id}   Target: {target.url}",
+         f"Generated: {report.generation_timestamp.strftime('%Y-%m-%d %H:%M')} UTC"],
+        report.regulatory_guidance_text,
+    )
+    filename = f"scan{target.scan_id}_{audience.lower()}_report.pdf"
+    return Response(pdf, mimetype="application/pdf",
                     headers={"Content-Disposition": f"attachment; filename={filename}"})

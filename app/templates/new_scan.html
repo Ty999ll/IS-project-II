@@ -2,14 +2,31 @@
 {% block title %}New scan{% endblock %}
 {% block content %}
 <h3>Submit a target</h3>
+{% if saved_sessions %}
+<div class="alert alert-info col-md-6">
+  <strong>You're still logged in to:</strong>
+  <ul class="mb-0 mt-1 list-unstyled">
+    {% for origin, s in saved_sessions.items() %}
+    <li class="d-flex align-items-center gap-2 mb-1">
+      <span>{{ origin }}{% if s.login_user %} as <strong>{{ s.login_user }}</strong>{% endif %} (since {{ s.saved_at }})</span>
+      <form method="post" action="{{ url_for('scan.forget_target_session') }}" class="ms-auto">
+        <input type="hidden" name="origin" value="{{ origin }}">
+        <button class="btn btn-link btn-sm p-0">Forget</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  <div class="form-text">Scans of these sites reuse that login, so you can leave the login details below blank.</div>
+</div>
+{% endif %}
 <form method="post" class="col-md-6">
   <div class="mb-3">
     <label class="form-label">Target URL</label>
-    <input class="form-control" name="url" placeholder="http://localhost/vulnerabilities/sqli/?Submit=Submit" required>
+    <input class="form-control" name="url" value="{{ prefill.url or '' }}" placeholder="http://localhost/vulnerabilities/sqli/?Submit=Submit" required>
   </div>
   <div class="mb-3">
     <label class="form-label">Parameter names to test (comma-separated) — optional</label>
-    <input class="form-control" name="parameters" placeholder="id">
+    <input class="form-control" name="parameters" value="{{ prefill.parameters or '' }}" placeholder="id">
     <div class="form-text">
       Leave this blank to discover the page's input fields automatically (the
       form fields and any query-string parameters). Fill it in only if you want
@@ -21,16 +38,17 @@
     <div class="form-text mb-2">
       Enter the target's login details and the scanner logs in for you - no need
       to copy a cookie from devtools. It handles anti-CSRF tokens (such as DVWA's
-      per-request <code>user_token</code>) automatically.
+      per-request <code>user_token</code>) automatically. You only need to do this once
+      per site: the login is remembered until it expires or you log out of this app.
     </div>
     <div class="mb-2">
       <label class="form-label">Login page URL</label>
-      <input class="form-control" name="login_url" placeholder="http://localhost/login.php">
+      <input class="form-control" name="login_url" value="{{ prefill.login_url or '' }}" placeholder="http://localhost/login.php">
     </div>
     <div class="row">
       <div class="col mb-2">
         <label class="form-label">Username</label>
-        <input class="form-control" name="login_user" placeholder="admin">
+        <input class="form-control" name="login_user" value="{{ prefill.login_user or '' }}" placeholder="admin">
       </div>
       <div class="col mb-2">
         <label class="form-label">Password</label>

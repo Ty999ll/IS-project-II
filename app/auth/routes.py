@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, redirect, url_for, request, flash
+from flask import Blueprint, render_template, redirect, url_for, request, flash, session
 from flask_login import login_user, logout_user, login_required
 
 from .. import db
@@ -58,4 +58,5 @@ def login():
 @login_required
 def logout():
     logout_user()
+    session.pop("target_sessions", None)  # forget saved logins to target sites too
     return redirect(url_for("auth.login"))

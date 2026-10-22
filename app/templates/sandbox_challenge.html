@@ -16,8 +16,15 @@
     <textarea class="form-control" name="solution" rows="6" placeholder="e.g. cursor.execute('SELECT * FROM users WHERE {{ finding.parameter_name }} = ?', (value,))">{{ challenge.developer_response or '' }}</textarea>
   </div>
   <div class="mb-3">
-    <label class="form-label">DVWA session cookie (needed to re-test against the live target)</label>
-    <input class="form-control" name="cookie" placeholder="PHPSESSID=...; security=low">
+    {% if saved_session %}
+    <div class="alert alert-info py-2">The live re-test will use your saved login to {{ target.url.split('/')[2] }}{% if saved_session.login_user %} (as {{ saved_session.login_user }}){% endif %}.</div>
+    <details><summary>Advanced: use a different session cookie</summary>
+    {% else %}
+    <div class="form-text mb-1">No saved login for this site. Run a scan with login details first, or paste a session cookie.</div>
+    <details open><summary>Session cookie (needed to re-test against the live target)</summary>
+    {% endif %}
+    <input class="form-control mt-2" name="cookie" placeholder="PHPSESSID=...; security=low">
+    </details>
   </div>
   <button class="btn btn-primary">Submit fix</button>
   <a class="btn btn-link" href="{{ url_for('sandbox.challenge_list') }}">Back to sandbox</a>
