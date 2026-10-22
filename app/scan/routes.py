@@ -1,24 +1,20 @@
-from datetime import datetime
-from flask import Blueprint, render_template, redirect, url_for, request, flash
+from flask import (Blueprint, render_template, redirect, url_for, request, flash, jsonify,
+                   current_app)
 from flask_login import login_required, current_user
 
 from .. import db
-from ..models import ScanTarget, VulnerabilityFinding, DetectionBaseline
+from ..models import ScanTarget, VulnerabilityFinding
 from .detection import (
-    run_passive_detection,
-    calibrate_baseline,
-    run_active_time_based_detection,
-    run_boolean_blind_detection,
     discover_fields,
     serialize_fields,
     load_scan_fields,
     authenticated_cookie_header,
     session_still_valid,
-    siblings_by_param,
     _parse_cookie_header,
     _cookie_header_from,
 )
 from . import target_sessions
+from .jobs import start_scan, get_progress
 
 scan_bp = Blueprint("scan", __name__)
 
@@ -118,71 +114,14 @@ def new_scan():
             scan_status="RUNNING",
         )
         db.session.add(target)
-        db.session.flush()  # so target.scan_id is set
+        db.session.commit()  # persist the RUNNING scan before the thread picks it up
 
-        # Each field's sibling form fields (Submit button, hidden tokens, other
-        # inputs), resubmitted with every probe so a Submit-gated form (DVWA
-        # Medium/High) actually runs the query instead of looking CLEAN.
-        sibs = siblings_by_param(fields)
-
-        # Fields can be submitted by GET or POST, so run detection one method
-        # group at a time (baseline calibration and payload submission have to
-        # match how the field is actually sent).
-        findings_by_param = {}
-        for method in ("GET", "POST"):
-            group = [f["name"] for f in fields if f["method"] == method]
-            if not group:
-                continue
-
-            # Stage 1 - passive error pattern detection on this group
-            passive = run_passive_detection(
-                url, group, cookie_header=cookie_header, method=method, siblings=sibs)
-            for f in passive:
-                findings_by_param[f["parameter_name"]] = f
-
-            # Stage 2 - time based detection for the params passive left CLEAN
-            # (same escalation as the Activity Diagram). Calibrate first.
-            clean_params = [f["parameter_name"] for f in passive
-                            if f["finding_classification"] == "CLEAN"]
-            if clean_params:
-                base = calibrate_baseline(
-                    url, clean_params[0], cookie_header=cookie_header, method=method,
-                    extra=sibs.get(clean_params[0], {}))
-                if base is not None:
-                    db.session.add(DetectionBaseline(
-                        scan_id=target.scan_id,
-                        mean_response_ms=base["mean_response_ms"],
-                        stddev_response_ms=base["stddev_response_ms"],
-                        sample_count=base["sample_count"],
-                    ))
-                    active = run_active_time_based_detection(
-                        url, clean_params, base, cookie_header=cookie_header, method=method,
-                        siblings=sibs)
-                    for f in active:  # replace the passive CLEAN with the active result
-                        findings_by_param[f["parameter_name"]] = f
-
-            # Stage 3 - Boolean-based blind for the params still CLEAN after
-            # time-based (the third technique; Activity Diagram escalation).
-            still_clean = [p for p, f in findings_by_param.items()
-                           if p in group and f["finding_classification"] == "CLEAN"]
-            if still_clean:
-                blind = run_boolean_blind_detection(
-                    url, still_clean, cookie_header=cookie_header, method=method, siblings=sibs)
-                for f in blind:
-                    findings_by_param[f["parameter_name"]] = f
-
-        for field in fields:
-            f = findings_by_param[field["name"]]
-            db.session.add(VulnerabilityFinding(
-                scan_id=target.scan_id,
-                parameter_name=f["parameter_name"],
-                detection_method=f["detection_method"],
-                finding_classification=f["finding_classification"],
-                payload_used=f["payload_used"],
-            ))
-
-        target.scan_status = "COMPLETE"
-        db.session.commit()
+        # Run the detection (passive -> time-based -> Boolean-blind escalation) in
+        # a background thread so the browser doesn't hang on the time-based waits;
+        # the results page polls for progress and updates when it's COMPLETE
+        # (roadmap item 8). Login and field discovery already ran synchronously
+        # above, so their errors are shown on the form before we get here.
+        start_scan(current_app._get_current_object(), target.scan_id, url, fields, cookie_header)
 
         return redirect(url_for("scan.results", scan_id=target.scan_id))
 
@@ -209,3 +148,17 @@ def results(scan_id):
     tested_fields = load_scan_fields(target.parameters, url=target.url)
     return render_template("results.html", target=target, findings=findings,
                            tested_fields=tested_fields)
+
+
+# Progress of a running scan, polled by the results page (roadmap item 8)
+@scan_bp.route("/scan/<int:scan_id>/status")
+@login_required
+def scan_status(scan_id):
+    target = ScanTarget.query.get_or_404(scan_id)
+    if target.initiator.org_id != current_user.org_id:
+        return jsonify({"error": "forbidden"}), 403
+    progress = get_progress(scan_id)
+    if progress is None:
+        # the in-memory entry is gone (e.g. after a restart); fall back to the DB
+        progress = {"status": target.scan_status, "done": 0, "total": 0, "current": None}
+    return jsonify(progress)

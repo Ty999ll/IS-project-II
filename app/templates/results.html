@@ -13,7 +13,43 @@
 {% set errored   = findings | selectattr("finding_classification", "equalto", "SCAN_ERROR") | list %}
 
 <h3>Results for scan #{{ target.scan_id }}</h3>
-<p class="text-muted"><strong>Target:</strong> {{ target.url }} &nbsp; <strong>Status:</strong> {{ target.scan_status }}</p>
+<p class="text-muted"><strong>Target:</strong> {{ target.url }} &nbsp; <strong>Status:</strong> <span id="status-text">{{ target.scan_status }}</span></p>
+
+{% if target.scan_status != "COMPLETE" %}
+{# the scan runs in the background (roadmap item 8); poll for progress and reload when done.
+   <noscript> falls back to a timed page refresh so it still finishes without JavaScript. #}
+<noscript><meta http-equiv="refresh" content="3"></noscript>
+<div id="scanning" class="alert alert-info">
+  <div class="d-flex align-items-center mb-2">
+    <div class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></div>
+    <strong>Scanning…</strong>&nbsp;<span id="progress-label">starting</span>
+  </div>
+  <div class="progress" style="height: 8px;">
+    <div id="progress-bar" class="progress-bar" role="progressbar" style="width: 0%"></div>
+  </div>
+</div>
+<script>
+(function () {
+  var url = "{{ url_for('scan.scan_status', scan_id=target.scan_id) }}";
+  function poll() {
+    fetch(url, {headers: {"Accept": "application/json"}})
+      .then(function (r) { return r.json(); })
+      .then(function (p) {
+        if (p.status === "COMPLETE") { window.location.reload(); return; }
+        var total = p.total || 0, done = p.done || 0;
+        var pct = total ? Math.round(done / total * 100) : 5;
+        document.getElementById("progress-bar").style.width = pct + "%";
+        var label = total ? (done + " of " + total + " fields checked") : "preparing";
+        if (p.current) { label += " — testing '" + p.current + "'"; }
+        document.getElementById("progress-label").textContent = label;
+        setTimeout(poll, 1500);
+      })
+      .catch(function () { setTimeout(poll, 3000); });
+  }
+  poll();
+})();
+</script>
+{% endif %}
 
 {# one-line summary a manager can act on #}
 {% if confirmed %}
