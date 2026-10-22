@@ -15,14 +15,18 @@ rest of that field's form (the Submit button, hidden tokens, other inputs - the
 when the Submit button is present (DVWA Medium/High) otherwise returns no result
 and the field wrongly reads CLEAN.
 
-So far I've done 2 of the 3 techniques from the proposal:
+All 3 techniques from the proposal are implemented, run as an escalation chain
+(same as the Activity Diagram): each stage only runs on fields the previous one
+left CLEAN, and a field can be corroborated by up to three methods.
 
   1. run_passive_detection() - looks for SQL error messages in the response
      (the simplest one).
   2. run_active_time_based_detection() - timing based, only runs if passive
      didn't find anything. Uses an adaptive baseline (see calibrate_baseline).
-
-Boolean based blind is NOT done yet, that's next.
+  3. run_boolean_blind_detection() - for fields the first two left CLEAN. Sends
+     an always-true vs an always-false condition and compares the responses; a
+     consistent true/false difference, where the true page matches the normal
+     one, confirms injection with no error message and no time delay.
 
 How the time based part works (same as the Activity Diagram): first measure
 how long the target normally takes to respond (calibrate_baseline), then send
@@ -40,6 +44,7 @@ advanced fallback. The scan route remembers the resulting cookie per target site
 (see scan/target_sessions.py) and session_still_valid() checks it hasn't
 expired before it is reused, so the user logs in once per site, not per scan.
 """
+import difflib
 import json
 import statistics
 import time
@@ -632,6 +637,100 @@ def run_active_time_based_detection(url, param_names, baseline, cookie_header=No
         results.append({
             "parameter_name": param,
             "detection_method": "ACTIVE_TIME_BASED",
+            "payload_used": triggering_payload,
+            "finding_classification": classification,
+        })
+
+    return results
+
+
+# Boolean-based blind settings
+# each pair is (always-true condition, always-false condition); templates cover a
+# quoted-string context and an unquoted numeric one, so both DVWA contexts are hit
+BOOLEAN_PAIRS = [
+    ("1' AND 1=1-- -", "1' AND 1=2-- -"),
+    ("1 AND 1=1", "1 AND 1=2"),
+    ("1') AND ('1'='1", "1') AND ('1'='2"),
+]
+# two response bodies count as "the same page" at/above this similarity ratio;
+# below it they are "different". A true/false pair that lands on opposite sides
+# of this line is the signal that the injected condition changed the result.
+BOOLEAN_SAME_RATIO = 0.97
+
+
+def _similarity(a, b):
+    """0..1 similarity of two response bodies (1.0 = identical)."""
+    return difflib.SequenceMatcher(None, a, b).ratio()
+
+
+def run_boolean_blind_detection(url, param_names, cookie_header=None, timeout=6, method="GET",
+                                siblings=None):
+    """Third detection stage, for params the first two left CLEAN.
+
+    For each template it sends an always-true and an always-false condition and
+    compares the two response bodies against the normal (benign value) response:
+
+      - true and false bodies DIFFER, and the true body matches the normal page
+        while the false one doesn't, repeated consistently -> CONFIRMED_VULNERABLE
+      - the difference shows once but doesn't reproduce        -> POSSIBLY_VULNERABLE
+      - true and false bodies stay the same (no effect)        -> CLEAN
+      - target went down during the test                       -> SCAN_ERROR
+
+    Records method BOOLEAN_BLIND. Same result shape as the other stages."""
+    headers = {"Cookie": cookie_header} if cookie_header else {}
+    method = "POST" if method == "POST" else "GET"
+    siblings = siblings or {}
+    results = []
+
+    for param in param_names:
+        classification = "CLEAN"
+        triggering_payload = None
+        extra = siblings.get(param, {})
+
+        try:
+            normal = _send(url, param, "1", headers, timeout, method, extra).text
+        except requests.RequestException as exc:
+            results.append({
+                "parameter_name": param,
+                "detection_method": "BOOLEAN_BLIND",
+                "payload_used": f"(request failed: {exc})",
+                "finding_classification": "SCAN_ERROR",
+            })
+            continue
+
+        for true_payload, false_payload in BOOLEAN_PAIRS:
+            # one true/false difference is a hint; a second consistent one confirms
+            hits = 0
+            scan_error = False
+            for _ in range(2):
+                try:
+                    body_true = _send(url, param, true_payload, headers, timeout, method, extra).text
+                    body_false = _send(url, param, false_payload, headers, timeout, method, extra).text
+                except requests.RequestException as exc:
+                    classification = "SCAN_ERROR"
+                    triggering_payload = f"(request failed: {exc})"
+                    scan_error = True
+                    break
+
+                differ = _similarity(body_true, body_false) < BOOLEAN_SAME_RATIO
+                true_looks_normal = _similarity(body_true, normal) >= _similarity(body_false, normal)
+                if differ and true_looks_normal:
+                    hits += 1
+            if scan_error:
+                break
+
+            if hits == 2:
+                classification = "CONFIRMED_VULNERABLE"
+                triggering_payload = true_payload
+                break  # confirmed, no need to try other templates
+            elif hits == 1:
+                classification = "POSSIBLY_VULNERABLE"
+                triggering_payload = true_payload
+                # keep trying other templates in case one confirms outright
+
+        results.append({
+            "parameter_name": param,
+            "detection_method": "BOOLEAN_BLIND",
             "payload_used": triggering_payload,
             "finding_classification": classification,
         })

@@ -8,6 +8,7 @@ from .detection import (
     run_passive_detection,
     calibrate_baseline,
     run_active_time_based_detection,
+    run_boolean_blind_detection,
     discover_fields,
     serialize_fields,
     load_scan_fields,
@@ -159,6 +160,16 @@ def new_scan():
                         siblings=sibs)
                     for f in active:  # replace the passive CLEAN with the active result
                         findings_by_param[f["parameter_name"]] = f
+
+            # Stage 3 - Boolean-based blind for the params still CLEAN after
+            # time-based (the third technique; Activity Diagram escalation).
+            still_clean = [p for p, f in findings_by_param.items()
+                           if p in group and f["finding_classification"] == "CLEAN"]
+            if still_clean:
+                blind = run_boolean_blind_detection(
+                    url, still_clean, cookie_header=cookie_header, method=method, siblings=sibs)
+                for f in blind:
+                    findings_by_param[f["parameter_name"]] = f
 
         for field in fields:
             f = findings_by_param[field["name"]]
