@@ -8,24 +8,55 @@
     <input class="form-control" name="url" placeholder="http://localhost/vulnerabilities/sqli/?Submit=Submit" required>
   </div>
   <div class="mb-3">
-    <label class="form-label">Parameter names to test (comma-separated)</label>
-    <input class="form-control" name="parameters" placeholder="id" required>
-  </div>
-  <div class="mb-3">
-    <label class="form-label">DVWA session cookie (paste from browser devtools)</label>
-    <input class="form-control" name="cookie" placeholder="PHPSESSID=...; security=low">
+    <label class="form-label">Parameter names to test (comma-separated) — optional</label>
+    <input class="form-control" name="parameters" placeholder="id">
     <div class="form-text">
-      First-slice limitation: log into DVWA manually in your browser, copy the Cookie
-      header from devtools, and paste it here. Automating DVWA's own login is a good
-      task for the next slice.
+      Leave this blank to discover the page's input fields automatically (the
+      form fields and any query-string parameters). Fill it in only if you want
+      to test specific parameters by hand.
     </div>
   </div>
+  <fieldset class="mb-3 border rounded p-3">
+    <legend class="float-none w-auto px-2 fs-6">Log in to the target (recommended)</legend>
+    <div class="form-text mb-2">
+      Enter the target's login details and the scanner logs in for you - no need
+      to copy a cookie from devtools. It handles anti-CSRF tokens (such as DVWA's
+      per-request <code>user_token</code>) automatically.
+    </div>
+    <div class="mb-2">
+      <label class="form-label">Login page URL</label>
+      <input class="form-control" name="login_url" placeholder="http://localhost/login.php">
+    </div>
+    <div class="row">
+      <div class="col mb-2">
+        <label class="form-label">Username</label>
+        <input class="form-control" name="login_user" placeholder="admin">
+      </div>
+      <div class="col mb-2">
+        <label class="form-label">Password</label>
+        <input class="form-control" type="password" name="login_pass" placeholder="password">
+      </div>
+    </div>
+  </fieldset>
+
+  <details class="mb-3">
+    <summary>Advanced: paste a session cookie instead</summary>
+    <div class="mt-2">
+      <label class="form-label">Session cookie (from browser devtools)</label>
+      <input class="form-control" name="cookie" placeholder="PHPSESSID=...; security=low">
+      <div class="form-text">
+        Fallback for when automatic login can't be used. If you also filled in the
+        login details above, anything here is merged in and takes precedence (handy
+        for setting DVWA's <code>security</code> level).
+      </div>
+    </div>
+  </details>
   <div class="mb-3 form-check">
     <input class="form-check-input" type="checkbox" name="authorized" id="authorized" value="yes" required>
     <label class="form-check-label" for="authorized">
       I confirm I own this target or have written permission to test it
     </label>
   </div>
-  <button class="btn btn-primary">Run passive detection</button>
+  <button class="btn btn-primary">Run scan</button>
 </form>
 {% endblock %}

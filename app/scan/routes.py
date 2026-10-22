@@ -8,6 +8,10 @@ from .detection import (
     run_passive_detection,
     calibrate_baseline,
     run_active_time_based_detection,
+    discover_fields,
+    serialize_fields,
+    load_scan_fields,
+    authenticated_cookie_header,
 )
 
 scan_bp = Blueprint("scan", __name__)
@@ -35,52 +39,90 @@ def new_scan():
         url = request.form["url"].strip()
         raw_params = request.form.get("parameters", "").strip()
         cookie_header = request.form.get("cookie", "").strip() or None
-        param_names = [p.strip() for p in raw_params.split(",") if p.strip()]
+        login_url = request.form.get("login_url", "").strip()
+        login_user = request.form.get("login_user", "").strip()
+        login_pass = request.form.get("login_pass", "")
 
         # check this on the server as well because the html `required` can be bypassed
         if request.form.get("authorized") != "yes":
             flash("Confirm you own this target or have written permission to test it.", "error")
             return render_template("new_scan.html")
 
-        if not url or not param_names:
-            flash("A target URL and at least one parameter name are required.", "error")
+        if not url:
+            flash("A target URL is required.", "error")
             return render_template("new_scan.html")
+
+        # Item 7: if login details were given, log in automatically and use that
+        # authenticated session instead of (or merged with) a pasted cookie.
+        # Pasting a cookie directly stays available as an advanced fallback.
+        if login_url and login_user:
+            cookie_header, login_error = authenticated_cookie_header(
+                login_url, login_user, login_pass, extra_cookie=cookie_header)
+            if login_error:
+                flash(login_error, "error")
+                return render_template("new_scan.html")
+
+        # Work out which fields to test. If the user typed parameter names we
+        # use those (manual fallback, all treated as GET). Otherwise we fetch
+        # the page and discover the input fields automatically (item 1).
+        if raw_params:
+            fields = [{"name": p.strip(), "method": "GET", "action_url": url}
+                      for p in raw_params.split(",") if p.strip()]
+        else:
+            discovery = discover_fields(url, cookie_header=cookie_header)
+            fields = discovery["fields"]
+            if not fields:
+                msg = discovery["error"] or (
+                    "No input fields were found on that page. Enter the parameter "
+                    "names to test manually.")
+                flash(msg, "error")
+                return render_template("new_scan.html")
 
         target = ScanTarget(
             initiated_by=current_user.user_id,
             url=url,
-            parameters=raw_params,
+            parameters=serialize_fields(fields),
             scan_status="RUNNING",
         )
         db.session.add(target)
         db.session.flush()  # so target.scan_id is set
 
-        # Stage 1 - passive error pattern detection on all the parameters
-        passive = run_passive_detection(url, param_names, cookie_header=cookie_header)
-        findings_by_param = {f["parameter_name"]: f for f in passive}
+        # Fields can be submitted by GET or POST, so run detection one method
+        # group at a time (baseline calibration and payload submission have to
+        # match how the field is actually sent).
+        findings_by_param = {}
+        for method in ("GET", "POST"):
+            group = [f["name"] for f in fields if f["method"] == method]
+            if not group:
+                continue
 
-        # Stage 2 - time based detection, but only for the params that passive
-        # said were CLEAN. Confirmed or errored ones don't get tested again
-        # (same as the Activity Diagram). Have to calibrate the baseline first.
-        clean_params = [f["parameter_name"] for f in passive
-                        if f["finding_classification"] == "CLEAN"]
-        if clean_params:
-            base = calibrate_baseline(url, clean_params[0], cookie_header=cookie_header)
-            if base is not None:
-                db.session.add(DetectionBaseline(
-                    scan_id=target.scan_id,
-                    mean_response_ms=base["mean_response_ms"],
-                    stddev_response_ms=base["stddev_response_ms"],
-                    sample_count=base["sample_count"],
-                ))
-                active = run_active_time_based_detection(
-                    url, clean_params, base, cookie_header=cookie_header)
-                # replace the passive CLEAN result with the active one
-                for f in active:
-                    findings_by_param[f["parameter_name"]] = f
+            # Stage 1 - passive error pattern detection on this group
+            passive = run_passive_detection(
+                url, group, cookie_header=cookie_header, method=method)
+            for f in passive:
+                findings_by_param[f["parameter_name"]] = f
 
-        for param in param_names:
-            f = findings_by_param[param]
+            # Stage 2 - time based detection for the params passive left CLEAN
+            # (same escalation as the Activity Diagram). Calibrate first.
+            clean_params = [f["parameter_name"] for f in passive
+                            if f["finding_classification"] == "CLEAN"]
+            if clean_params:
+                base = calibrate_baseline(
+                    url, clean_params[0], cookie_header=cookie_header, method=method)
+                if base is not None:
+                    db.session.add(DetectionBaseline(
+                        scan_id=target.scan_id,
+                        mean_response_ms=base["mean_response_ms"],
+                        stddev_response_ms=base["stddev_response_ms"],
+                        sample_count=base["sample_count"],
+                    ))
+                    active = run_active_time_based_detection(
+                        url, clean_params, base, cookie_header=cookie_header, method=method)
+                    for f in active:  # replace the passive CLEAN with the active result
+                        findings_by_param[f["parameter_name"]] = f
+
+        for field in fields:
+            f = findings_by_param[field["name"]]
             db.session.add(VulnerabilityFinding(
                 scan_id=target.scan_id,
                 parameter_name=f["parameter_name"],
@@ -105,4 +147,6 @@ def results(scan_id):
         flash("You can only view scans from your own organization.", "error")
         return redirect(url_for("scan.dashboard"))
     findings = VulnerabilityFinding.query.filter_by(scan_id=scan_id).all()
-    return render_template("results.html", target=target, findings=findings)
+    tested_fields = load_scan_fields(target.parameters, url=target.url)
+    return render_template("results.html", target=target, findings=findings,
+                           tested_fields=tested_fields)

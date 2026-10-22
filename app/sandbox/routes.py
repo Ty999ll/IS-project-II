@@ -5,7 +5,7 @@ from flask_login import login_required, current_user
 from .. import db
 from ..models import VulnerabilityFinding, TrainingChallenge, ScanTarget, User
 from .evaluation import evaluate_submission
-from ..scan.detection import run_passive_detection
+from ..scan.detection import run_passive_detection, field_method_for
 
 sandbox_bp = Blueprint("sandbox", __name__)
 
@@ -81,7 +81,9 @@ def challenge(finding_id):
                                     challenge=ch, snippet=snippet_for(finding))
 
         # this is verifyRemediation() from the diagrams, re-test the same field on the live target
-        retest = run_passive_detection(target.url, [finding.parameter_name], cookie_header=cookie_header)
+        method = field_method_for(target.parameters, finding.parameter_name, url=target.url)
+        retest = run_passive_detection(
+            target.url, [finding.parameter_name], cookie_header=cookie_header, method=method)
         still_vulnerable = retest[0]["finding_classification"] == "CONFIRMED_VULNERABLE"
 
         if still_vulnerable:

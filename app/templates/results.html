@@ -4,6 +4,15 @@
 <h3>Results for scan #{{ target.scan_id }}</h3>
 <p><strong>URL:</strong> {{ target.url }} &nbsp; <strong>Status:</strong> {{ target.scan_status }}</p>
 
+{% if tested_fields %}
+<p class="text-muted mb-1"><strong>Input fields tested</strong> (discovered automatically from the page, or entered manually):</p>
+<ul class="small">
+  {% for field in tested_fields %}
+  <li><code>{{ field.name }}</code> <span class="badge bg-secondary">{{ field.method }}</span></li>
+  {% endfor %}
+</ul>
+{% endif %}
+
 <table class="table">
   <thead><tr><th>Parameter</th><th>Method</th><th>Classification</th><th>Payload</th></tr></thead>
   <tbody>
