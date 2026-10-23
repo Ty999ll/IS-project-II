@@ -37,6 +37,30 @@ METHOD_LABELS = {
     "BOOLEAN_BLIND": "Boolean-based blind analysis",
 }
 
+# plain-language explanation of each detection method, for non-specialist readers
+PLAIN_METHOD = {
+    "PASSIVE_ERROR_PATTERN": (
+        "the site returned a database error message when the scanner entered unexpected "
+        "characters, which is a clear sign the input reaches the database without being "
+        "handled safely"),
+    "ACTIVE_TIME_BASED": (
+        "the site took noticeably longer to respond when the scanner sent input designed to "
+        "make the database pause, which shows the input is being run as part of a database "
+        "command"),
+    "BOOLEAN_BLIND": (
+        "the site's response changed depending on whether a true or a false test condition "
+        "was slipped into the input, which shows the input is being used inside a database "
+        "query even though no error message is shown"),
+}
+
+# plain-language explanation of each remediation status
+STATUS_EXPLAIN = {
+    "UNRESOLVED": "not yet fixed",
+    "FIX_SUBMITTED": "a developer has submitted a fix that is waiting to be re-tested",
+    "STILL_VULNERABLE": "a fix was attempted but the field is still vulnerable and needs another look",
+    "VERIFIED_RESOLVED": "fixed and confirmed safe by re-testing the live site",
+}
+
 # the Kenya DPA obligation, stated once and reused where a reader needs it
 DPA_OBLIGATION = (
     "Data-protection obligation (Kenya Data Protection Act, 2019): a SQL "
@@ -102,13 +126,33 @@ def _hr_section(f, i):
 
 def _it_section(f, i):
     method_label = METHOD_LABELS.get(f.detection_method, f.detection_method or "an automated technique")
+    method_plain = PLAIN_METHOD.get(f.detection_method, "the scanner's automated checks flagged this input")
+    status = f.remediation_status or "UNRESOLVED"
+    status_plain = STATUS_EXPLAIN.get(status, status.replace("_", " ").lower())
+    kind = ("confirmed vulnerable" if f.finding_classification == "CONFIRMED_VULNERABLE"
+            else "possibly vulnerable (still to be confirmed)")
     return (
-        f"{i}. Field '{f.parameter_name}' - {_severity(f)} risk.\n"
-        f"   Detected via: {method_label}.\n"
-        f"   Current remediation status: {_status_label(f)}.\n"
-        "   Next steps: assign this finding to a developer to fix with "
-        "parameterized queries, then re-test the exact field through the "
-        "training sandbox before marking it resolved."
+        f"{i}. Input field '{f.parameter_name}' - {_severity(f)} risk ({kind}).\n\n"
+        "   What this means in practice: this input on the scanned page can be used to "
+        "interfere with the database behind the site. If it is left unfixed, someone could "
+        "use it to view or change member records they should not be able to reach - the kind "
+        "of personal and financial data the institution is responsible for protecting.\n\n"
+        f"   How the scanner found it: {method_plain} (technical name: {method_label}).\n\n"
+        f"   Where it stands now: {_status_label(f)} - {status_plain}.\n\n"
+        "   What you should do next:\n"
+        "     1. Assign this finding to a developer. The fix is to change the affected query "
+        "so the input is passed in safely as a value, rather than being joined straight into "
+        "the database command. Your developer will know this as using a 'parameterised query' "
+        "or 'prepared statement'; they don't need to rewrite the whole page, just that query.\n"
+        "     2. The developer can work through and submit the fix in this system's training "
+        "sandbox. When they do, the system automatically re-tests the exact same field "
+        "against the live site, so you get independent confirmation rather than taking the "
+        "fix on trust.\n"
+        "     3. Only treat the finding as resolved once that re-test comes back clean. If it "
+        "still shows as vulnerable, send it back to the developer for another attempt - the "
+        "system will flag it for re-review rather than letting it be closed.\n"
+        "     4. Because member personal data is at risk, treat this as time-sensitive: see "
+        "the data-protection note in the briefing above about the 72-hour reporting window."
     )
 
 
@@ -141,6 +185,25 @@ _HEADERS = {
     "DEVELOPER": "Developer remediation detail",
 }
 
+# a plain-language preamble shown once, before the findings, for audiences that
+# benefit from context. The IT generalist isn't a security specialist, so this
+# explains what SQL injection is and states the data-protection obligation once,
+# so the per-finding sections can stay focused on what to do.
+_INTROS = {
+    "IT_GENERALIST": (
+        "About this report: it lists the input fields on the scanned page that are "
+        "vulnerable, or possibly vulnerable, to SQL injection, and what to do about each "
+        "one. SQL injection is where text entered into a web form or a web address is "
+        "mistakenly treated by the site as commands for its database, instead of as plain "
+        "data. When that happens, an attacker can read, change or delete information in the "
+        "database - including members' personal and financial records - without permission. "
+        "The fix is well understood and is usually a small change per affected query; the "
+        "sections below explain each finding in plain terms and walk through getting it "
+        "fixed and confirmed resolved.\n\n"
+        + DPA_OBLIGATION
+    ),
+}
+
 
 def build_report_text(findings, audience="MANAGEMENT"):
     """Return the report text for `findings`, tailored to `audience`.
@@ -166,4 +229,8 @@ def build_report_text(findings, audience="MANAGEMENT"):
     if possible:
         header += ("(Possible findings were flagged by one technique but not "
                    "corroborated - treat them as needing confirmation.)\n")
-    return header + "\n" + "\n\n".join(sections)
+
+    body = header + "\n"
+    if audience in _INTROS:
+        body += _INTROS[audience] + "\n\n"
+    return body + "\n\n".join(sections)
