@@ -1,13 +1,62 @@
+{# The landing page after login. Top: an organization-wide overview (cards +
+   two charts + a posture banner) built from `stats`. Bottom: this user's own
+   scans. Both come from scan.dashboard. #}
 {% extends "base.html" %}
 {% block title %}Dashboard{% endblock %}
 {% block content %}
+
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <h3>Your scans</h3>
+  <h3>Organization overview</h3>
   <a class="btn btn-primary" href="{{ url_for('scan.new_scan') }}">+ New scan</a>
 </div>
+
+{# a one-line "where do we stand" banner for a non-technical manager #}
+<div class="alert alert-{{ stats.posture_colour }}">
+  <strong>Security posture: {{ stats.posture_label }}.</strong>
+  {% if stats.posture_label == "At risk" %}{{ stats.open }} confirmed/possible finding(s) still need fixing.
+  {% elif stats.posture_label == "Remediated" %}Every vulnerability found has been fixed and verified.
+  {% else %}No vulnerabilities have been found in your scans so far (this doesn't prove the targets are safe).
+  {% endif %}
+</div>
+
+{# four quick numbers #}
+<div class="row g-3 mb-4">
+  {% set tiles = [
+     ("Scans run", stats.scans, "secondary"),
+     ("Vulnerable fields", stats.by_class["CONFIRMED_VULNERABLE"], "danger"),
+     ("Open to fix", stats.open, "warning"),
+     ("Fixed & verified", stats.resolved_pct ~ "%", "success")] %}
+  {% for label, value, colour in tiles %}
+  <div class="col-6 col-md-3">
+    <div class="card border-{{ colour }}"><div class="card-body text-center py-3">
+      <div class="h3 mb-0 text-{{ colour }}">{{ value }}</div>
+      <div class="small text-muted">{{ label }}</div>
+    </div></div>
+  </div>
+  {% endfor %}
+</div>
+
+{# two charts: how findings were classified, and which method caught the problems #}
+<div class="row g-4 mb-4">
+  <div class="col-md-5">
+    <div class="card h-100"><div class="card-body">
+      <h6 class="text-muted">Findings by result</h6>
+      <canvas id="classChart" height="200" role="img" aria-label="Breakdown of findings by classification"></canvas>
+    </div></div>
+  </div>
+  <div class="col-md-7">
+    <div class="card h-100"><div class="card-body">
+      <h6 class="text-muted">Problems found, by detection method</h6>
+      <canvas id="methodChart" height="200" role="img" aria-label="Count of vulnerable and possibly-vulnerable findings by detection method"></canvas>
+    </div></div>
+  </div>
+</div>
+
+<h3 class="mb-3">Your scans</h3>
 <table class="table table-striped">
   <thead><tr><th>Scan ID</th><th>URL</th><th>Status</th><th>Submitted</th><th></th></tr></thead>
   <tbody>
+    {# one row per scan; the {% else %} below shows when the list is empty #}
     {% for s in scans %}
     <tr>
       <td>{{ s.scan_id }}</td>
@@ -21,4 +70,49 @@
     {% endfor %}
   </tbody>
 </table>
+
+{# Charts drawn with Chart.js (loaded from a CDN, same as Bootstrap - no build
+   step). The numbers come from `stats`; tojson safely drops them into JS.
+   Colours: the result doughnut uses status colours (red/amber/green/grey) that
+   match the results page; the method bars use a colourblind-checked palette. #}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+(function () {
+  if (typeof Chart === "undefined") { return; }  // CDN blocked: skip the charts
+  var byClass = {{ stats.by_class | tojson }};
+  var byMethod = {{ stats.by_method | tojson }};
+
+  // result breakdown - a doughnut, with the legend naming each slice
+  new Chart(document.getElementById("classChart"), {
+    type: "doughnut",
+    data: {
+      labels: ["Vulnerable", "Possibly vulnerable", "Clean", "Not tested (error)"],
+      datasets: [{
+        data: [byClass.CONFIRMED_VULNERABLE, byClass.POSSIBLY_VULNERABLE, byClass.CLEAN, byClass.SCAN_ERROR],
+        backgroundColor: ["#e34948", "#eda100", "#1baf7a", "#9a9a97"],
+        borderColor: "#ffffff", borderWidth: 2
+      }]
+    },
+    options: { plugins: { legend: { position: "bottom" } } }
+  });
+
+  // problems by detection method - a bar chart, method names on the axis
+  new Chart(document.getElementById("methodChart"), {
+    type: "bar",
+    data: {
+      labels: ["Error-message", "Response-timing", "True/false"],
+      datasets: [{
+        label: "Findings",
+        data: [byMethod.PASSIVE_ERROR_PATTERN, byMethod.ACTIVE_TIME_BASED, byMethod.BOOLEAN_BLIND],
+        backgroundColor: ["#2a78d6", "#eb6834", "#1baf7a"],
+        borderRadius: 4
+      }]
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+    }
+  });
+})();
+</script>
 {% endblock %}

@@ -1,0 +1,111 @@
+{# The "Learn" page: a short, plain-language lesson on SQL injection and the fix.
+   This is the teaching material behind the hands-on challenges - a developer can
+   read this first, then go and fix the real findings. No data needed. #}
+{% extends "base.html" %}
+{% block title %}Learn — SQL injection{% endblock %}
+{% block content %}
+<h3>Learn: SQL injection and how to stop it</h3>
+<p class="text-muted">A quick, practical guide. Read this, then fix the real findings in the sandbox.</p>
+
+<div class="row">
+<div class="col-lg-9">
+
+<h5 class="mt-4">1. What is SQL injection?</h5>
+<p>
+  A web page often builds a database query out of whatever you type. SQL injection
+  is when that input is treated as part of the <em>command</em> instead of as plain
+  <em>data</em>, so an attacker can change what the query does.
+</p>
+<p>Take a member-lookup page that builds its query like this:</p>
+<pre class="bg-light p-3 border rounded">query = "SELECT * FROM members WHERE member_id = '" + user_input + "'"</pre>
+<p>
+  If someone types <code>1</code>, the query asks for member 1 — fine. But if they
+  type <code>' OR '1'='1</code>, the query becomes:
+</p>
+<pre class="bg-light p-3 border rounded">SELECT * FROM members WHERE member_id = '' OR '1'='1'</pre>
+<p>
+  <code>'1'='1'</code> is always true, so the database returns <strong>every
+  member's record</strong> — names, national IDs, phone numbers, balances. That is
+  a data-protection breach, and it's why this matters for a SACCO or microfinance.
+</p>
+
+<h5 class="mt-4">2. Why it happens</h5>
+<p>
+  The root cause is always the same: <strong>the value is glued directly into the
+  SQL string</strong> (string concatenation, <code>f"..."</code> f-strings,
+  <code>.format()</code>, or <code>%</code> formatting). The database has no way to
+  tell "data the user typed" from "commands the programmer wrote".
+</p>
+
+<h5 class="mt-4">3. The fix: parameterized queries</h5>
+<p>
+  The fix is to send the query and the values <strong>separately</strong>. You put
+  a placeholder in the query and hand the value to the database driver, which keeps
+  it as data — it can never become part of the command. This is called a
+  <strong>parameterized query</strong> or <strong>prepared statement</strong>.
+</p>
+
+<p class="mb-1"><strong>Python</strong> (sqlite3 / most drivers):</p>
+<pre class="bg-light p-3 border rounded"><span class="text-danger"># vulnerable</span>
+cursor.execute("SELECT * FROM members WHERE member_id = '" + user_input + "'")
+
+<span class="text-success"># fixed — the value is bound through a placeholder</span>
+cursor.execute("SELECT * FROM members WHERE member_id = ?", (user_input,))</pre>
+
+<p class="mb-1"><strong>PHP</strong> (PDO — common in small SACCO web apps):</p>
+<pre class="bg-light p-3 border rounded"><span class="text-danger">// vulnerable</span>
+$db->query("SELECT * FROM members WHERE member_id = '" . $_GET['id'] . "'");
+
+<span class="text-success">// fixed — prepare, then bind</span>
+$stmt = $db->prepare("SELECT * FROM members WHERE member_id = ?");
+$stmt->execute([$_GET['id']]);</pre>
+
+<p class="mb-1"><strong>Java</strong> (JDBC):</p>
+<pre class="bg-light p-3 border rounded"><span class="text-danger">// vulnerable</span>
+stmt.executeQuery("SELECT * FROM members WHERE member_id = '" + id + "'");
+
+<span class="text-success">// fixed — PreparedStatement with a ? placeholder</span>
+PreparedStatement ps = conn.prepareStatement("SELECT * FROM members WHERE member_id = ?");
+ps.setString(1, id);
+ps.executeQuery();</pre>
+
+<p>
+  The placeholder differs by language (<code>?</code>, <code>%s</code>,
+  <code>:name</code>), but the idea is identical everywhere: <strong>never build the
+  SQL string by hand from user input.</strong>
+</p>
+
+<h5 class="mt-4">4. Extra hardening (defence in depth)</h5>
+<ul>
+  <li><strong>Validate input</strong> — if an id must be a number, reject anything
+    that isn't. This isn't a substitute for parameterized queries, but it helps.</li>
+  <li><strong>Least privilege</strong> — the database account the app uses should
+    only be able to do what it needs (e.g. read members, not drop tables).</li>
+  <li><strong>Don't show raw errors</strong> — database error messages hand
+    attackers clues. Log them; show the user a friendly message.</li>
+</ul>
+<p class="text-muted"><small>Note: this project's training focuses on the main fix —
+  parameterized queries — because that's what removes the vulnerability itself.</small></p>
+
+<h5 class="mt-4">5. How to spot it when reviewing code</h5>
+<ul>
+  <li>Look for a SQL string being built with <code>+</code>, an f-string,
+    <code>.format()</code>, or <code>%</code> around a request value.</li>
+  <li>Check whether there's a placeholder (<code>?</code> / <code>%s</code> /
+    <code>:name</code>) and the value passed <em>separately</em> — if so, it's safe.</li>
+  <li>Any value that comes from the user (URL, form, cookie, header) and reaches a
+    query is a candidate — trace it.</li>
+</ul>
+
+<a class="btn btn-primary mt-3" href="{{ url_for('sandbox.challenge_list') }}">Go to the challenges →</a>
+
+</div>
+<div class="col-lg-3">
+  <div class="card bg-light"><div class="card-body small">
+    <strong>In one line</strong>
+    <p class="mt-2 mb-0">Send the query and the user's value <em>separately</em>, using a
+    placeholder — so the value can never be run as a command.</p>
+  </div></div>
+</div>
+</div>
+{% endblock %}

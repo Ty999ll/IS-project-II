@@ -1,3 +1,6 @@
+{# The report page for a scan. A dropdown picks which audience's version to show
+   (Management / HR / IT / Developer), and the buttons download it as PDF/text,
+   open the print page, or regenerate it. Text comes from report.view_report. #}
 {% extends "base.html" %}
 {% block title %}Report — scan #{{ target.scan_id }}{% endblock %}
 {% block content %}

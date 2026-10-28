@@ -3,7 +3,7 @@ from flask import (Blueprint, render_template, redirect, url_for, request, flash
 from flask_login import login_required, current_user
 
 from .. import db
-from ..models import ScanTarget, VulnerabilityFinding
+from ..models import ScanTarget, VulnerabilityFinding, User
 from .detection import (
     discover_fields,
     serialize_fields,
@@ -27,11 +27,69 @@ def index():
 @scan_bp.route("/dashboard")
 @login_required
 def dashboard():
+    # the user's own scans (the list at the bottom of the page)
     scans = (ScanTarget.query
              .filter_by(initiated_by=current_user.user_id)
              .order_by(ScanTarget.created_at.desc())
              .all())
-    return render_template("dashboard.html", scans=scans)
+    # organization-wide numbers for the overview cards + charts at the top
+    stats = _org_stats(current_user.org_id)
+    return render_template("dashboard.html", scans=scans, stats=stats)
+
+
+def _org_stats(org_id):
+    """Count up the whole organization's scans and findings for the dashboard.
+
+    Returns a plain dict the template (and its charts) can read directly."""
+    org_scans = (ScanTarget.query
+                 .join(User, ScanTarget.initiated_by == User.user_id)
+                 .filter(User.org_id == org_id).all())
+    scan_ids = [s.scan_id for s in org_scans]
+
+    findings = []
+    if scan_ids:
+        findings = (VulnerabilityFinding.query
+                    .filter(VulnerabilityFinding.scan_id.in_(scan_ids)).all())
+
+    # how each finding was classified
+    classes = ["CONFIRMED_VULNERABLE", "POSSIBLY_VULNERABLE", "CLEAN", "SCAN_ERROR"]
+    by_class = {c: 0 for c in classes}
+    for f in findings:
+        by_class[f.finding_classification] = by_class.get(f.finding_classification, 0) + 1
+
+    # which detection method confirmed/flagged the problem ones
+    methods = ["PASSIVE_ERROR_PATTERN", "ACTIVE_TIME_BASED", "BOOLEAN_BLIND"]
+    by_method = {m: 0 for m in methods}
+    for f in findings:
+        if f.finding_classification in ("CONFIRMED_VULNERABLE", "POSSIBLY_VULNERABLE"):
+            by_method[f.detection_method] = by_method.get(f.detection_method, 0) + 1
+
+    # remediation progress: of the findings worth fixing, how many are verified fixed
+    trainable = [f for f in findings
+                 if f.finding_classification in ("CONFIRMED_VULNERABLE", "POSSIBLY_VULNERABLE")]
+    resolved = [f for f in trainable if f.remediation_status == "VERIFIED_RESOLVED"]
+    open_count = len(trainable) - len(resolved)
+    resolved_pct = round(len(resolved) / len(trainable) * 100) if trainable else 0
+
+    # a simple traffic-light posture for the management reader
+    if open_count > 0:
+        posture = ("At risk", "danger")      # unfixed vulnerabilities exist
+    elif trainable:
+        posture = ("Remediated", "success")  # everything found has been fixed
+    else:
+        posture = ("No issues found", "secondary")
+
+    return {
+        "scans": len(org_scans),
+        "findings": len(findings),
+        "by_class": by_class,
+        "by_method": by_method,
+        "resolved": len(resolved),
+        "open": open_count,
+        "resolved_pct": resolved_pct,
+        "posture_label": posture[0],
+        "posture_colour": posture[1],
+    }
 
 
 # Render the new-scan form, showing saved target logins and keeping what was typed

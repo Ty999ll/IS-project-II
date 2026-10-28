@@ -1,3 +1,7 @@
+{# The "start a scan" form. The user gives a target URL and (optionally) login
+   details so the scanner can reach pages behind a login. If they've already
+   logged in to that site this session, those saved logins are listed up top so
+   they can skip re-entering them. Posts to scan.new_scan. #}
 {% extends "base.html" %}
 {% block title %}New scan{% endblock %}
 {% block content %}

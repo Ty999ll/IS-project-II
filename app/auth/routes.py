@@ -27,16 +27,18 @@ def register():
         email = request.form["email"].strip().lower()
         password = request.form["password"]
         role = request.form.get("role", "IT_GENERALIST")
+        sector = request.form.get("sector", "").strip()
 
         if User.query.filter_by(email=email).first():
             flash("An account with that email already exists.", "error")
             return render_template("register.html")
 
-        # if the org doesn't exist yet the first person to register makes it,
-        # anyone after that with the same org name just gets added to it
+        # if the org doesn't exist yet the first person to register makes it
+        # (and sets its sector), anyone after that with the same org name just
+        # gets added to it - the existing sector is left as-is
         org = Organization.query.filter_by(name=org_name).first()
         if org is None:
-            org = Organization(name=org_name)
+            org = Organization(name=org_name, sector=sector or None)
             db.session.add(org)
             db.session.flush()  # flush so we have org.org_id before committing
 

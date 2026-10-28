@@ -33,21 +33,67 @@ MODEL_SOLUTION = (
 TRAINABLE = ("CONFIRMED_VULNERABLE", "POSSIBLY_VULNERABLE")
 
 
-@sandbox_bp.route("/sandbox")
-@login_required
-def challenge_list():
-    findings = (
+def _trainable_base(org_id):
+    """All trainable findings for an organization (confirmed + possibly)."""
+    return (
         VulnerabilityFinding.query
         .join(ScanTarget, VulnerabilityFinding.scan_id == ScanTarget.scan_id)
         .join(User, ScanTarget.initiated_by == User.user_id)
         .filter(
             VulnerabilityFinding.finding_classification.in_(TRAINABLE),
-            User.org_id == current_user.org_id,
-            VulnerabilityFinding.remediation_status != "VERIFIED_RESOLVED",
+            User.org_id == org_id,
         )
-        .all()
     )
-    return render_template("sandbox_list.html", findings=findings)
+
+
+def _open_findings(org_id):
+    """Trainable findings still needing work (not yet verified resolved)."""
+    return (_trainable_base(org_id)
+            .filter(VulnerabilityFinding.remediation_status != "VERIFIED_RESOLVED")
+            .all())
+
+
+def _progress(org_id):
+    """(resolved, total) trainable findings, for the progress indicator."""
+    total = _trainable_base(org_id).count()
+    resolved = (_trainable_base(org_id)
+                .filter(VulnerabilityFinding.remediation_status == "VERIFIED_RESOLVED")
+                .count())
+    return resolved, total
+
+
+def _next_open_finding_id(org_id, exclude_id):
+    """The next finding still to fix (for the 'next challenge' progression)."""
+    for f in _open_findings(org_id):
+        if f.finding_id != exclude_id:
+            return f.finding_id
+    return None
+
+
+def _render_challenge(finding, target, ch):
+    resolved, total = _progress(current_user.org_id)
+    return render_template(
+        "sandbox_challenge.html", finding=finding, target=target, challenge=ch,
+        snippet=snippet_for(finding), saved_session=target_sessions.get_saved(target.url),
+        score=ch.score, resolved=resolved, total=total,
+        next_finding_id=_next_open_finding_id(current_user.org_id, finding.finding_id))
+
+
+@sandbox_bp.route("/sandbox")
+@login_required
+def challenge_list():
+    findings = _open_findings(current_user.org_id)
+    resolved, total = _progress(current_user.org_id)
+    return render_template("sandbox_list.html", findings=findings,
+                           resolved=resolved, total=total)
+
+
+# A plain-language lesson on SQL injection and how to fix it (roadmap item: the
+# "training" half of the project). Static educational content, no data needed.
+@sandbox_bp.route("/sandbox/learn")
+@login_required
+def learn():
+    return render_template("sandbox_learn.html")
 
 
 @sandbox_bp.route("/sandbox/finding/<int:finding_id>", methods=["GET", "POST"])
@@ -89,9 +135,7 @@ def challenge(finding_id):
             ch.score = 0
             db.session.commit()
             flash(feedback, "error")
-            return render_template("sandbox_challenge.html", finding=finding, target=target,
-                                    challenge=ch, snippet=snippet_for(finding),
-                                    saved_session=target_sessions.get_saved(target.url))
+            return _render_challenge(finding, target, ch)
 
         # use the login saved when the site was scanned, unless a cookie was pasted
         saved = target_sessions.get_saved(target.url)
@@ -110,9 +154,7 @@ def challenge(finding_id):
                 flash("Syntax looks parameterized. To re-test it against the live target "
                       "before it's marked resolved, log in to the site (run a scan with its "
                       "login details) or paste a session cookie.", "warning")
-            return render_template("sandbox_challenge.html", finding=finding, target=target,
-                                    challenge=ch, snippet=snippet_for(finding),
-                                    saved_session=target_sessions.get_saved(target.url))
+            return _render_challenge(finding, target, ch)
 
         # this is verifyRemediation() from the diagrams, re-test the same field on the live target
         # resubmitting the field's whole form (siblings), the same way the scan did
@@ -132,14 +174,19 @@ def challenge(finding_id):
             finding.remediation_status = "VERIFIED_RESOLVED"
             finding.verified_at = datetime.utcnow()
             ch.score = 100
-            flash("Re-test against the live target came back clean. Marked VERIFIED_RESOLVED.", "success")
+            db.session.commit()
+            # progression: hand the developer their next challenge, or finish
+            nxt = _next_open_finding_id(current_user.org_id, finding_id)
+            if nxt is not None:
+                flash("Fixed and verified (+100 points). Here's your next challenge.", "success")
+                return redirect(url_for("sandbox.challenge", finding_id=nxt))
+            flash("Fixed and verified (+100 points). All findings resolved — nice work!", "success")
+            return redirect(url_for("sandbox.challenge_list"))
 
         db.session.commit()
         return redirect(url_for("sandbox.challenge_list"))
 
-    return render_template("sandbox_challenge.html", finding=finding, target=target,
-                            challenge=ch, snippet=snippet_for(finding),
-                                    saved_session=target_sessions.get_saved(target.url))
+    return _render_challenge(finding, target, ch)
 
 
 def snippet_for(finding):

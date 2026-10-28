@@ -1,3 +1,5 @@
+{# Registration form. Posts to auth.register, which creates the user (and the
+   organization if the org name is new). Sector is only used for a brand-new org. #}
 {% extends "base.html" %}
 {% block title %}Register{% endblock %}
 {% block content %}
@@ -6,6 +8,16 @@
   <div class="mb-3">
     <label class="form-label">Organization name</label>
     <input class="form-control" name="org_name" required>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Sector</label>
+    <select class="form-select" name="sector">
+      <option value="Microfinance institution">Microfinance institution</option>
+      <option value="SACCO">SACCO</option>
+      <option value="Bank">Bank</option>
+      <option value="Other">Other</option>
+    </select>
+    <div class="form-text">Only used when you create a new organization; ignored if the organization already exists.</div>
   </div>
   <div class="mb-3">
     <label class="form-label">Your name</label>

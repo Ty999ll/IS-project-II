@@ -1,13 +1,56 @@
+{# One training challenge: shows the vulnerable pattern for this finding and a
+   code editor to type a parameterized fix. On submit, sandbox.challenge checks
+   the fix looks parameterized and then re-tests the real target to confirm it.
+   Also shows training progress and, after a correct fix, the next challenge. #}
 {% extends "base.html" %}
 {% block title %}Fix finding #{{ finding.finding_id }}{% endblock %}
 {% block content %}
 <h3>Finding #{{ finding.finding_id }} — parameter '{{ finding.parameter_name }}'</h3>
 <p><strong>Target:</strong> {{ target.url }} &nbsp; <strong>Status:</strong> {{ finding.remediation_status }}</p>
 
+{% if total %}
+<div class="mb-3">
+  <div class="d-flex justify-content-between small text-muted mb-1">
+    <span>Training progress</span><span>{{ resolved }} of {{ total }} findings fixed</span>
+  </div>
+  <div class="progress" style="height: 8px;">
+    <div class="progress-bar bg-success" role="progressbar" style="width: {{ (resolved / total * 100) | round }}%"></div>
+  </div>
+  {% if score is not none %}
+  <p class="small text-muted mt-1 mb-0">Your last score on this challenge: <strong>{{ score }}/100</strong></p>
+  {% endif %}
+</div>
+{% endif %}
+
+<p><a href="{{ url_for('sandbox.learn') }}">New to this? Read the short lesson first →</a></p>
+
 <div class="alert alert-info">
   Illustrative vulnerable pattern (not DVWA's actual source — we don't have file access to it,
   this represents the shape of the bug based on the detected parameter):
   <pre>{{ snippet }}</pre>
+</div>
+
+{# progressive hints: the developer can open as many as they need. The last one
+   reveals the stored model solution for this challenge (item: deeper training). #}
+<div class="mb-3">
+  <details class="mb-1">
+    <summary class="text-primary">Hint 1 — what's wrong here</summary>
+    <p class="small mt-1">The value for '{{ finding.parameter_name }}' is being joined straight
+    into the SQL string, so the database treats whatever is typed as part of the command.</p>
+  </details>
+  <details class="mb-1">
+    <summary class="text-primary">Hint 2 — the fix to use</summary>
+    <p class="small mt-1">Use a parameterized query: put a placeholder
+    (<code>?</code>, <code>%s</code> or <code>:name</code>) in the SQL and pass the value
+    separately, instead of building the string by hand.</p>
+  </details>
+  {% if challenge.correct_parameterized_solution %}
+  <details>
+    <summary class="text-muted">Show the model solution</summary>
+    <pre class="bg-light p-2 border rounded small mt-1">{{ challenge.correct_parameterized_solution }}</pre>
+    <p class="small text-muted">Try to write it yourself first — you'll remember it better.</p>
+  </details>
+  {% endif %}
 </div>
 
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
@@ -30,6 +73,9 @@
     </details>
   </div>
   <button class="btn btn-primary">Submit fix</button>
+  {% if next_finding_id %}
+  <a class="btn btn-outline-secondary" href="{{ url_for('sandbox.challenge', finding_id=next_finding_id) }}">Skip to next challenge</a>
+  {% endif %}
   <a class="btn btn-link" href="{{ url_for('sandbox.challenge_list') }}">Back to sandbox</a>
 </form>
 
